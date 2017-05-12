@@ -1,0 +1,18 @@
+W zamyśle mój język (tymczasowa nazwa: "Fair Functional Language") ma być "uczciwym" językiem funkcyjnym ze wszystkimi (a przynajmniej większością) aspektów nowoczesnych języków takich jak Haskell. Lukier syntaktyczny będzie ograniczony do minimum, a wcięcia (podobnie jak np. w Pythonie) będą miały znaczenie syntaktyczne. Głownym celem, przynajmniej na razie, jest stworzenie wszystkich narzędzi potrzebnych do zaimplementowania monad.
+
+Wejście/wyjście będzie docelowo realizowane czymś podobnym do monady I/O - jeśli się nie uda, będzie to funkcja "interact".
+
+
+Najważniejsze cechy:
+  * Silne typowanie
+  * Leniwość
+  * Funkcyjnośc oparta na rachunku lambda
+  * Inferencja typów (możliwe, że częściowa)
+  * Polimorfizm
+  * Algebraiczne typy danych (możliwe, że GADTs) + pattern matching
+  * Klasy (najpewniej jednoargumentowe)
+  * Syntaktyczne wcięcia
+  * Monady
+
+
+Jeśli wystarczy mi czasu, wprowadzę do języka definiowanie własnych operatorów równożędnych z wbudowanymi.

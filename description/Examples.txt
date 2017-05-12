@@ -1,0 +1,60 @@
+# expressions
+def example_1 = let x=5 in x*x
+
+def example_2 = let f = \x -> x*x in f 5
+
+def example_3 = letrec
+  factorial = \x -> if x <= 1 then 1 else factorial (x-1)
+  in factorial 5
+
+def example_4 = (\b -> if b then 42 else 69) True
+
+
+# datatypes
+data Bool =
+  | True
+  | False
+
+data Tree a =
+  | Node Tree Tree a
+  | Leaf
+
+data List a =
+  | Cons a (List a)
+  | Empty
+
+def example_6 = letrec
+  sum_tree = \tr -> match tr with
+    Node l r a  -> (sum_tree l) + (sum_tree r) + a
+    Leaf        -> 0
+  in Tree (Tree Leaf Leaf 42) Leaf 13
+
+
+# laziness
+# a : b : c == a : (b : c) == Cons a (Cons b c), definiowane w kompilatorze lub w samym języku
+def example_5 = letrec
+  fibs = 0 : 1 : zip_with (\x y -> x+y) fibs (tail fibs)
+  in take 5 fibs
+
+
+# partial application
+def example_7 = let
+  sum = \a b -> a+b
+  in map (sum 5) [1,2,3,4,5]
+
+
+# typedefs
+type NestedListInt = List (List Int)
+
+
+# type specification
+def example_8 = let
+  eq_int :: (Int -> Int -> Bool) = \a b -> a == b
+  in 5+3 == 8
+
+def example_9 = letrec
+  sum_list :: List Int -> Int = \l -> match l with
+    Empty       -> 0
+    Cons hd tl  -> hd + (sum_list tl)
+  in sum_list [5,4,3,2,1]
+

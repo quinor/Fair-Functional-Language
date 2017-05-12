@@ -1,0 +1,67 @@
+Definicja w bardzo nieformalnej składni (nie będę używał BNFC). Białe znaki są ignorowane poza oczywistymi miejscami oraz miejscami, gdzie oznaczam wcięcia. <intended> oznacza, że każda linia w danej definicji musi zaczynać się od takiego samego wcięcia (podobnie jak w Pythonie). ()*, ()+ i ()? to odpowiednio dowolnie wiele, przynajmniej jedno i co najwyżej jedno wystąpienie danego wzorca.
+
+
+Identifier    # (z małej litery, litery i podkreślenia)
+CapIdentifier # (z dużej litery, znaki j/w)
+Integer       # (poprawna liczba całkowita)
+
+Program
+  (TLD)+
+
+TLD # (top level definition)
+  NamedExp
+  AlgType
+  Typedef
+
+NamedExp
+  "def" Identifier "=" Exp
+
+AlgType
+  "data" CapIdentifier (Identifier)* "="
+    (<indented> "|" CapIdentifier (Type)*)+
+
+Typedef
+  "type" CapIdentifier (Identifier)* "=" Type
+
+Type
+  "Bool"
+  "Int"
+  Type "->" Type
+  CapIdentifier (Type)*
+
+Exp
+  "True"
+  "False"
+  Integer
+  "\" (Identifier)+ "->" Exp
+  "let" Identifier "=" Exp
+  "letrec" Identifier "=" Exp
+  "match" Exp "with" (<indented> MatchExp "->" Exp)+
+  Identifier            # (variable)
+  CapIdentifier         # (constructor)
+  Exp Exp               # (partial application)
+  Exp Op Exp
+  "(" Exp ")"
+
+MatchExp
+  Identifier (MatchExp)*
+  identifier
+  "(" MatchExp ")"
+
+Op
+  "+"
+  "-"
+  "*"
+  "/"
+  "%"
+  "=="
+  "!="
+  "<="
+  ">="
+  "<"
+  ">"
+  "!"
+  "&&"
+  "||"
+
+Comments, # and {# #}
