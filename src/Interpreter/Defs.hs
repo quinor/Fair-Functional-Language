@@ -3,6 +3,7 @@ module Interpreter.Defs (
   VarT,
   Data(..),
   Exp(..),
+  TLD(..),
   Type(..),
   Primitive(..),
   Interpreter
@@ -32,6 +33,7 @@ data Data =
     | DPrimitive Primitive
     | DInt Int
     | DBool Bool
+  deriving Show
 
 
 -- basically AST
@@ -42,7 +44,13 @@ data Exp =
   | EApply Exp Exp       -- (Var Var)
   | EData Data           -- just Data constant
   | EVar VarE             -- just Var
+  deriving Show
 
+
+-- toplevel definition in a program
+data TLD =
+    NamedExp VarE Exp
+  deriving Show
 
 -- type of an expression
 data Type =
@@ -76,3 +84,14 @@ prParenType :: Type -> PP.Doc
 prParenType t = case t of
   TLambda _ _ -> PP.parens (prType t)
   _           -> prType t
+
+
+
+instance Show Primitive where
+  showsPrec _ x = shows (prPrim x)
+
+
+prPrim :: Primitive -> PP.Doc
+prPrim (Prim1 t _) = PP.text "Primitive " PP.<+> PP.parens (prType t)
+prPrim (Prim2 t _) = PP.text "Primitive " PP.<+> PP.parens (prType t)
+prPrim (Prim3 t _) = PP.text "Primitive " PP.<+> PP.parens (prType t)

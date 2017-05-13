@@ -35,7 +35,7 @@ Exp
   Integer
   "\" (Identifier)+ "->" Exp
   "let" Identifier "=" Exp
-  "letrec" Identifier "=" Exp
+  "rec" Identifier "=" Exp
   "match" Exp "with" (<indented> MatchExp "->" Exp)+
   Identifier            # (variable)
   CapIdentifier         # (constructor)
