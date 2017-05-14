@@ -41,7 +41,7 @@ add_next dt = state (\st -> ((), st Sequence.|> dt))
 exec ex = case ex of
   EVar var                          -> do
     id <- reader (\env -> fromJust $ Map.lookup var env)
-    dt <- state (\st -> ((fromJust $ Sequence.lookup id st), st))
+    dt <- state (\st -> ((st `Sequence.index` id), st))
     case dt of
       DLazy ns ex   -> do
         dt_val <- local (const ns) (exec ex)
