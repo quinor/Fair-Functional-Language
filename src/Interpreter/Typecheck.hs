@@ -1,5 +1,4 @@
 module Interpreter.Typecheck (
-  infer_type,
   check_type
 ) where
 import Interpreter.Defs
@@ -8,7 +7,7 @@ import Control.Monad.Identity
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-
+import Debug.Trace
 
 -- perform type checking on the expression and return necessary substitution
 -- and type infered (after the substitution has been made)
@@ -91,7 +90,7 @@ instance Types TypeEnv where
 
 null_sub = Map.empty
 
-throw s = undefined
+throw s = trace s undefined --todo: fuckin' fix it!
 
 compose s1 s2 = s1 `Map.union` (Map.map (apply_sub s1) s2)
 
@@ -130,7 +129,7 @@ instantiate (Scheme vars t) = do
 
 infer_type env@(TypeEnv env_dict) ex = case ex of
   EVar var                          -> case Map.lookup var env_dict of
-    Nothing -> throw "no such variable"
+    Nothing -> throw $ "no such variable: " ++ var
     Just ts -> do
       t <- instantiate ts
       return (null_sub, t)

@@ -8,11 +8,11 @@ run_test = if sum_test == 3 && let_test == 42 && lambda_test == 13 && if_test ==
   then True
   else False
 
-DInt sum_test = run_program sum_exp
-DInt let_test = run_program let_exp
-DInt lambda_test = run_program lambda_exp
-DInt if_test = run_program if_exp
-DInt fact_test = run_program fact_exp
+DInt sum_test = eval_program sum_exp
+DInt let_test = eval_program let_exp
+DInt lambda_test = eval_program lambda_exp
+DInt if_test = eval_program if_exp
+DInt fact_test = eval_program fact_exp
 
 
 

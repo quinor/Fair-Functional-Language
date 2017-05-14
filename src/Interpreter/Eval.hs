@@ -1,8 +1,8 @@
 {-# Language FlexibleContexts #-}
 
 module Interpreter.Eval (
-  exec,
-  run_program
+  eval_program,
+  exec
 ) where
 import Interpreter.Defs
 import Control.Monad.State
@@ -15,7 +15,7 @@ import qualified Data.Map as Map
 -- execute the expression (AST) and return the result
 exec :: Exp -> Interpreter Data
 -- run expression and retrieve the result
-run_program :: Exp -> Data
+eval_program :: Exp -> Data
 
 -- primitive applivation function
 apply_primitive :: Primitive -> Exp -> Interpreter Data
@@ -74,4 +74,4 @@ exec ex = case ex of
     ns <- ask
     return $ DLambda ns var def
 
-run_program prog = fst $ runIdentity $ runStateT (runReaderT (exec prog) Map.empty) Sequence.empty
+eval_program prog = fst $ runIdentity $ runStateT (runReaderT (exec prog) Map.empty) Sequence.empty

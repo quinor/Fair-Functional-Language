@@ -1,19 +1,6 @@
 module Interpreter.Primitives (
-  p_add,
-  p_sub,
-  p_mul,
-  p_div,
-  p_mod,
-  p_eq,
-  p_neq,
-  p_lt,
-  p_gt,
-  p_le,
-  p_ge,
-  p_and,
-  p_or,
-  p_neg,
-  p_if
+  builtin_prefix,
+  prelude
 ) where
 import Interpreter.Defs
 import Interpreter.Eval
@@ -22,6 +9,12 @@ wrap_2i_i :: (Int -> Int -> Int) -> Primitive
 wrap_2i_b :: (Int -> Int -> Bool) -> Primitive
 wrap_2b_b :: (Bool -> Bool -> Bool) -> Primitive
 
+builtin_prefix :: String
+
+
+
+-- builtin prefix
+builtin_prefix = "__builtin__"
 
 
 -- primitive-related functions
@@ -79,3 +72,30 @@ p_if = Prim3 (TLambda TBool $ TLambda (TVar "a") $ TLambda (TVar "a") (TVar "a")
     if cond
       then exec e2
       else exec e3
+
+
+-- primitives aggregation
+builtins :: [(Primitive, VarE)]
+builtins = [
+  (p_add, builtin_prefix ++ "add"),
+  (p_sub, builtin_prefix ++ "sub"),
+  (p_mul, builtin_prefix ++ "mul"),
+  (p_div, builtin_prefix ++ "div"),
+  (p_mod, builtin_prefix ++ "mod"),
+  (p_eq, builtin_prefix ++ "eq"),
+  (p_neq, builtin_prefix ++ "neq"),
+  (p_lt, builtin_prefix ++ "lt"),
+  (p_gt, builtin_prefix ++ "gt"),
+  (p_le, builtin_prefix ++ "le"),
+  (p_ge, builtin_prefix ++ "ge"),
+  (p_and, builtin_prefix ++ "and"),
+  (p_or, builtin_prefix ++ "or"),
+  (p_neg, builtin_prefix ++ "neg"),
+  (p_if, builtin_prefix ++ "if")]
+
+prelude :: Exp -> Exp
+prelude ex = foldr
+  (\(p, n) e -> ELet n (EData $ DPrimitive p) e)
+  ex
+  builtins
+

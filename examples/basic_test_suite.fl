@@ -1,0 +1,38 @@
+{#
+
+This is super basic program testing base language properties.
+Can be thought of as smoke test.
+#}
+
+
+# super basic test, "hello world" style
+def sum_exp = 1 + 2
+
+# test of let expression
+def let_exp = let
+  num = 42
+  in num
+
+# lambda expression
+def lambda_exp = let
+  add_one = \n -> n+1
+  in add_one 12
+
+# if expression
+def if_exp = let
+  if_t = \b -> if b
+    then 42
+    else 13
+  in if_t True
+
+# recursion
+def fact_exp = rec
+  factorial = \n -> if n == 0
+    then 1
+    else n * factorial (n-1)
+  in factorial 5
+
+# polymorphism
+def poly_exp = let
+  id = \x -> x
+  in if (id True) then (id 1) else 0
