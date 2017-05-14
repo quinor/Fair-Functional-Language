@@ -4,6 +4,7 @@ import System.Environment
 main :: IO ()
 main = do
   args <- getArgs
-  if null args
-    then putStr "No input file!\n"
-    else run_program $ head args
+  fn <- if null args
+    then getContents
+    else readFile $ head args
+  run_program fn

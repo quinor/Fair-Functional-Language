@@ -11,8 +11,7 @@ import Data.Either
 --run program from file
 run_program :: String -> IO ()
 
-run_program fn = do
-  f <- readFile fn
+run_program f = do
   let prog = parse_str f
   case prog of
     Left err    -> print err
