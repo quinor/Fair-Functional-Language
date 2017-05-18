@@ -126,12 +126,12 @@ instantiate (Scheme vars t) = do
 --inferType implementation
 
 inferType env@(TypeEnv envDict) ex = case ex of
-  EVar var                          -> case Map.lookup var envDict of
+  EVar _ var                          -> case Map.lookup var envDict of
     Nothing -> throw $ "no such variable: " ++ var
     Just ts -> do
       t <- instantiate ts
       return (nullSub, t)
-  EData dt                          -> case dt of
+  EData _ dt                          -> case dt of
     DPrimitive pr -> case pr of
       Prim1 t _ -> return (nullSub, t)
       Prim2 t _ -> return (nullSub, t)
@@ -139,14 +139,14 @@ inferType env@(TypeEnv envDict) ex = case ex of
     DInt _        -> return (nullSub, TInt)
     DBool _       -> return (nullSub, TBool)
     _             -> throw "how did you manage to get suc data literal?" -- no literals of other types allowed
-  EApply fun val                    -> do
+  EApply _ fun val                    -> do
     tv <- newVar "va_app_"
     (s1, t1) <- inferType env fun
     let env' = applySub s1 env
     (s2, t2) <- inferType env' val
     s3 <- unify (applySub s2 t1) (TLambda t2 tv)
     return (s1 `compose` s2 `compose` s3, applySub s3 tv)
-  ELetRec nameDefs ex              -> do -- TODO: multiple defs
+  ELetRec _ nameDefs ex              -> do -- TODO: multiple defs
     --insert type variables
     new <- foldM
       (\ oldEnv@(TypeEnv oEDict) (n, _) -> do
@@ -168,7 +168,7 @@ inferType env@(TypeEnv envDict) ex = case ex of
       nameDefs
     (sx, tx) <- inferType new' ex
     return (sub `compose` sx, tx)
-  ELet nameDefs ex                 -> do
+  ELet _ nameDefs ex                 -> do
     (sub, _, new) <- foldM
       (\ (oldSub, oldLightEnv, oldRichEnv@(TypeEnv oREDict)) (n, e) -> do
         (s, t) <- inferType oldLightEnv e
@@ -180,7 +180,7 @@ inferType env@(TypeEnv envDict) ex = case ex of
       nameDefs
     (sx, tx) <- inferType new ex
     return (sub `compose` sx, tx)
-  ELambda var def                   -> do
+  ELambda _ var def                   -> do
     tv <- newVar "va_lambda_"
     let newEnv = TypeEnv $ Map.insert var (Scheme [] tv) envDict
     (s, t) <- inferType newEnv def

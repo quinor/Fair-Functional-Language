@@ -2,11 +2,13 @@ module Interpreter.Defs (
   VarE,
   VarT,
   Data(..),
+  Position(..),
   Exp(..),
   TLD(..),
   Type(..),
   Primitive(..),
-  Interpreter
+  Interpreter,
+  takePos
 ) where
 import qualified Data.Sequence as Sequence
 import qualified Data.Map as Map
@@ -35,16 +37,26 @@ data Data =
     | DBool Bool
   deriving Show
 
+-- position in the source file: filename, line, column
+data Position = Position String Int Int deriving Show
 
 -- basically AST
 data Exp =
-    ELambda VarE Exp          -- (\Var -> Exp)
-  | ELet [(VarE, Exp)] Exp    -- let [Var = Exp] in Exp, Vars visible only in second exp
-  | ELetRec [(VarE, Exp)] Exp -- letrec [Var = Exp] in Exp, Vars visible in both exps
-  | EApply Exp Exp            -- (Var Var)
-  | EData Data                -- just Data constant
-  | EVar VarE                 -- just Var
+    ELambda Position VarE Exp          -- (\Var -> Exp)
+  | ELet    Position [(VarE, Exp)] Exp    -- let [Var = Exp] in Exp, Vars visible only in second exp
+  | ELetRec Position [(VarE, Exp)] Exp -- letrec [Var = Exp] in Exp, Vars visible in both exps
+  | EApply  Position Exp Exp            -- (Var Var)
+  | EData   Position Data                -- just Data constant
+  | EVar    Position VarE                 -- just Var
   deriving Show
+
+takePos :: Exp -> Position
+takePos (ELambda p _ _) = p
+takePos (ELet    p _ _) = p
+takePos (ELetRec p _ _) = p
+takePos (EApply  p _ _) = p
+takePos (EData   p _  ) = p
+takePos (EVar    p _  ) = p
 
 
 -- toplevel definition in a program

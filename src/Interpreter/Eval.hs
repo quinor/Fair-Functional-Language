@@ -39,7 +39,7 @@ addNext dt = state (\st -> ((), st Sequence.|> dt))
 -- exec implementation
 
 exec ex = case ex of
-  EVar var                          -> do
+  EVar _ var                          -> do
     id <- reader (fromJust . Map.lookup var)
     dt <- state (\st -> (st `Sequence.index` id, st))
     case dt of
@@ -48,8 +48,8 @@ exec ex = case ex of
         state (\st -> ((), Sequence.update id dt_val st))
         return dt_val
       _             -> return dt
-  EData dt                          -> return dt
-  EApply fun val                    -> do
+  EData _ dt                          -> return dt
+  EApply _ fun val                    -> do
     fun <- exec fun
     case fun of
       DLambda f_ns var def  -> do
@@ -59,7 +59,7 @@ exec ex = case ex of
         local (const $ Map.insert var next f_ns) (exec def)
       DPrimitive prim       -> applyPrimitive prim val
       _                     -> undefined -- you can apply nothig else
-  ELetRec nameDefs ex              -> do
+  ELetRec _ nameDefs ex              -> do
     next <- nextId
     ns <- ask
     let new_ns = foldr
@@ -68,7 +68,7 @@ exec ex = case ex of
           (zip nameDefs [next..])
     mapM_ (\(_, e) -> addNext $ DLazy new_ns e) nameDefs
     local (const new_ns) (exec ex)
-  ELet nameDefs ex                 -> do
+  ELet _ nameDefs ex                 -> do
     next <- nextId
     ns <- ask
     let new_ns = foldr
@@ -77,7 +77,7 @@ exec ex = case ex of
           (zip nameDefs [next..])
     mapM_ (\(_, e) -> addNext $ DLazy ns e) nameDefs
     local (const new_ns) (exec ex)
-  ELambda var def                   -> do
+  ELambda _ var def                   -> do
     ns <- ask
     return $ DLambda ns var def
 

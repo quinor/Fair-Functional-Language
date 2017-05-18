@@ -1,3 +1,4 @@
+module Main where
 import Interpreter.Execute (runProgram)
 import System.Environment
 

@@ -48,14 +48,16 @@ opMap = Map.fromList [
 
 
 reserved :: [String]
+getPos :: Parser Position
 sc :: Parser ()
 rword :: String -> Parser ()
 rop :: String -> Parser ()
 lexeme :: Parser a -> Parser a
 symbol :: String -> Parser String
 parens :: Parser a -> Parser a
-integer :: Parser Int
-boolean :: Parser Bool
+eInteger :: Parser Exp
+eBoolean :: Parser Exp
+eVariable :: Parser Exp
 lIdentifier :: Parser String
 uIdentifier :: Parser String
 operator :: Parser Op
@@ -73,6 +75,13 @@ toplevelDef :: Parser TLD
 reserved = ["def", "data", "type", "True", "False", "let", "rec", "match", "with", "in", "if",
   "then", "else", "\\", "->", "="]
 
+getPos = do
+  p <- getPosition
+  return $ Position
+    (sourceName p)
+    (fromIntegral $ unPos $ sourceLine p)
+    (fromIntegral $ unPos $ sourceColumn p)
+
 sc = L.space (void spaceChar) (L.skipLineComment "#") (L.skipBlockComment "{#" "#}")
 
 rword s = try $ string s *> notFollowedBy (alphaNumChar <|> char '_') *> sc
@@ -84,10 +93,6 @@ lexeme = L.lexeme sc
 symbol = L.symbol sc
 
 parens = between (symbol "(") (symbol ")")
-
-integer = fromInteger <$> lexeme L.integer
-
-boolean = (rword "True" *> pure True) <|> (rword "False" *> pure False)
 
 lIdentifier = try $ do
   s <- lexeme $ (:) <$> lowerChar <*> many (alphaNumChar <|> char '_')
@@ -115,21 +120,38 @@ expr = do
   return $ exprConversion [h] [] t -- TODO: stack expr parsing algorithm
 
 exprSingle =
-      (EData . DBool) <$> boolean
-  <|> (EData . DInt) <$> integer
-  <|> EVar <$> lIdentifier
+      eBoolean
+  <|> eInteger
+  <|> eVariable
   <|> eLambda
   <|> eLet
   <|> eRec
   <|> eIf
   <|> parens expr
 
+
+eInteger = do
+  p <- getPos
+  i <- fromInteger <$> lexeme L.integer
+  return $ EData p $ DInt i
+
+eBoolean = do
+  p <- getPos
+  b <- (rword "True" *> pure True) <|> (rword "False" *> pure False)
+  return $ EData p $ DBool b
+
+eVariable = do
+  p <- getPos
+  ident <- lIdentifier
+  return $ EVar p ident
+
 eLambda = do
+  p <- getPos
   rop "\\"
-  vars <- (many lIdentifier)
+  vars <- many lIdentifier
   rop "->"
   e <- expr
-  return $ foldr ELambda e vars
+  return $ foldr (ELambda p) e vars
 
 letDecls :: Parser [(VarE, Exp)]
 letDecls = some $ do
@@ -139,31 +161,40 @@ letDecls = some $ do
   return (v, e)
 
 eLet = do
+  p <- getPos
   rword "let"
   vars <- letDecls
   rword "in"
   e2 <- expr
-  return $ ELet vars e2
+  return $ ELet p vars e2
 
 eRec = do
+  p <- getPos
   rword "rec"
   vars <- letDecls
   rword "in"
   e2 <- expr
-  return $ ELetRec vars e2
+  return $ ELetRec p vars e2
 
 eIf = do
+  p0 <- getPos
   rword "if"
+  p1 <- getPos
   cond <- expr
   rword "then"
+  p2 <- getPos
   e1 <- expr
   rword "else"
+  p3 <- getPos
   e2 <- expr
-  return $ EApply (EApply (EApply (EVar $ builtinPrefix ++ "if") cond) e1) e2
+  return $ EApply p3 (EApply p2 (EApply p1 (EVar p0 $ builtinPrefix ++ "if") cond) e1) e2
 
-applyOp (Op _ _ "__special__lambda") e1 e2 = EApply e1 e2
+applyOp (Op _ _ "__special__lambda") e1 e2 = EApply (takePos e2) e1 e2
 
-applyOp (Op _ _ name) e1 e2 = EApply (EApply (EVar name) e1) e2
+applyOp (Op _ _ name) e1 e2 =
+    EApply (takePos e2)
+      (EApply (takePos e1) (EVar (takePos e1) name) e1)
+      e2
 
 
 exprConversion [e] [] [] = e

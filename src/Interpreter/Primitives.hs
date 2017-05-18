@@ -94,8 +94,5 @@ builtins = [
   (pIf, builtinPrefix ++ "if")]
 
 prelude :: Exp -> Exp
-prelude ex = foldr
-  (\(p, n) e -> ELet [(n, EData $ DPrimitive p)] e)
-  ex
-  builtins
-
+prelude = ELet (Position "prelude" 0 0)
+  (map (\(pr, n) -> (n, EData (Position "prelude" 0 0) $ DPrimitive pr)) builtins)
