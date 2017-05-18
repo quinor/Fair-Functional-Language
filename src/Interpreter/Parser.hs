@@ -1,9 +1,9 @@
 module Interpreter.Parser (
-  parse_str,
+  parseStr,
   ParseResult
 ) where
 import Interpreter.Defs
-import Interpreter.Primitives
+import Interpreter.Primitives (builtinPrefix)
 import Control.Monad (void)
 import Text.Megaparsec
 import Text.Megaparsec.String
@@ -13,11 +13,11 @@ import qualified Data.Map as Map
 type ParseResult = Either (ParseError (Token String) Dec) [TLD]
 
 --parse program from string
-parse_str :: String -> ParseResult
-parse_str s = parse lang_parser "<none>" s
+parseStr :: String -> ParseResult
+parseStr = parse langParser "<none>"
 
 --parser of the entire language
-lang_parser :: Parser [TLD]
+langParser :: Parser [TLD]
 
 
 data Ass = AssL | AssR deriving (Eq, Show)
@@ -27,23 +27,23 @@ data Op = Op Int Ass VarE deriving Show -- precedence, associativity, function n
 
 
 
-op_map :: Map.Map String Op
-op_map = Map.fromList [
-  ("$", Op 0 AssR ("__special__lambda")),
-  ("||", Op 2 AssL (builtin_prefix ++ "or")),
-  ("&&", Op 3 AssL (builtin_prefix ++ "and")),
-  ("==", Op 4 AssL (builtin_prefix ++ "eq")),
-  ("/=", Op 4 AssL (builtin_prefix ++ "neq")),
-  ("<=", Op 4 AssL (builtin_prefix ++ "le")),
-  (">=", Op 4 AssL (builtin_prefix ++ "ge")),
-  ("<", Op 4 AssL (builtin_prefix ++ "lt")),
-  (">", Op 4 AssL (builtin_prefix ++ "gt")),
-  ("+", Op 6 AssL (builtin_prefix ++ "add")),
-  ("-", Op 6 AssL (builtin_prefix ++ "sub")),
-  ("*", Op 7 AssL (builtin_prefix ++ "mul")),
-  ("/", Op 7 AssL (builtin_prefix ++ "div")),
-  ("%", Op 7 AssL (builtin_prefix ++ "mod")),
-  ("", Op 10 AssL ("__special__lambda"))]
+opMap :: Map.Map String Op
+opMap = Map.fromList [
+  ("$", Op 0 AssR "__special__lambda"),
+  ("||", Op 2 AssL $ builtinPrefix ++ "or"),
+  ("&&", Op 3 AssL $ builtinPrefix ++ "and"),
+  ("==", Op 4 AssL $ builtinPrefix ++ "eq"),
+  ("/=", Op 4 AssL $ builtinPrefix ++ "neq"),
+  ("<=", Op 4 AssL $ builtinPrefix ++ "le"),
+  (">=", Op 4 AssL $ builtinPrefix ++ "ge"),
+  ("<", Op 4 AssL $ builtinPrefix ++ "lt"),
+  (">", Op 4 AssL $ builtinPrefix ++ "gt"),
+  ("+", Op 6 AssL $ builtinPrefix ++ "add"),
+  ("-", Op 6 AssL $ builtinPrefix ++ "sub"),
+  ("*", Op 7 AssL $ builtinPrefix ++ "mul"),
+  ("/", Op 7 AssL $ builtinPrefix ++ "div"),
+  ("%", Op 7 AssL $ builtinPrefix ++ "mod"),
+  ("", Op 10 AssL "__special__lambda")]
 
 
 
@@ -56,26 +56,26 @@ symbol :: String -> Parser String
 parens :: Parser a -> Parser a
 integer :: Parser Int
 boolean :: Parser Bool
-l_identifier :: Parser String
-u_identifier :: Parser String
+lIdentifier :: Parser String
+uIdentifier :: Parser String
 operator :: Parser Op
 expr :: Parser Exp
-expr_single :: Parser Exp
-e_lambda :: Parser Exp
-e_let :: Parser Exp
-e_rec :: Parser Exp
-e_if :: Parser Exp
-apply_op :: Op -> Exp -> Exp -> Exp
-expr_conversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
-named_exp :: Parser (VarE, Exp)
-toplevel_def :: Parser TLD
+exprSingle :: Parser Exp
+eLambda :: Parser Exp
+eLet :: Parser Exp
+eRec :: Parser Exp
+eIf :: Parser Exp
+applyOp :: Op -> Exp -> Exp -> Exp
+exprConversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
+namedExp :: Parser (VarE, Exp)
+toplevelDef :: Parser TLD
 
 reserved = ["def", "data", "type", "True", "False", "let", "rec", "match", "with", "in", "if",
   "then", "else", "\\", "->", "="]
 
 sc = L.space (void spaceChar) (L.skipLineComment "#") (L.skipBlockComment "{#" "#}")
 
-rword s = try $ string s *> notFollowedBy (alphaNumChar <|> (char '_')) *> sc
+rword s = try $ string s *> notFollowedBy (alphaNumChar <|> char '_') *> sc
 
 rop s = try $ string s *> notFollowedBy (oneOf "=-.:/\\~<>!@$%^&*()+{}|?") *> sc
 
@@ -89,14 +89,14 @@ integer = fromInteger <$> lexeme L.integer
 
 boolean = (rword "True" *> pure True) <|> (rword "False" *> pure False)
 
-l_identifier = try $ do
-  s <- lexeme $ (:) <$> lowerChar <*> many (alphaNumChar <|> (char '_'))
+lIdentifier = try $ do
+  s <- lexeme $ (:) <$> lowerChar <*> many (alphaNumChar <|> char '_')
   if s `elem` reserved
     then fail $ "forbidden: keyword " ++ show s ++ " cannot be an identifier"
     else return s
 
-u_identifier = try $ do
-  s <- lexeme $ (:) <$> upperChar <*> many (alphaNumChar <|> (char '_'))
+uIdentifier = try $ do
+  s <- lexeme $ (:) <$> upperChar <*> many (alphaNumChar <|> char '_')
   if s `elem` reserved
     then fail $ "forbidden: keyword " ++ show s ++ " cannot be an identifier"
     else return s
@@ -105,89 +105,92 @@ operator = try $ do
   s <- lexeme $ many (oneOf "=-.:/\\~<>!@$%^&*+{}|?") -- reserved: [](),_"'`
   if s `elem` reserved
     then fail $ "forbidden keyword symbol: " ++ show s ++ " cannot be an operator"
-    else case Map.lookup s op_map of
+    else case Map.lookup s opMap of
       Just x  -> return x
       Nothing -> fail $ "no such operator: " ++ show s
 
 expr = do
-  h <- expr_single
-  t <- many (try $ (,) <$> operator <*> expr_single)
-  return $ expr_conversion [h] [] t -- TODO: stack expr parsing algorithm
+  h <- exprSingle
+  t <- many (try $ (,) <$> operator <*> exprSingle)
+  return $ exprConversion [h] [] t -- TODO: stack expr parsing algorithm
 
-expr_single =
+exprSingle =
       (EData . DBool) <$> boolean
   <|> (EData . DInt) <$> integer
-  <|> EVar <$> l_identifier
-  <|> e_lambda
-  <|> e_let
-  <|> e_rec
-  <|> e_if
+  <|> EVar <$> lIdentifier
+  <|> eLambda
+  <|> eLet
+  <|> eRec
+  <|> eIf
   <|> parens expr
 
-e_lambda = do
+eLambda = do
   rop "\\"
-  var <- l_identifier
+  vars <- (many lIdentifier)
   rop "->"
   e <- expr
-  return $ ELambda var e
+  return $ foldr ELambda e vars
 
-e_let = do
+letDecls :: Parser [(VarE, Exp)]
+letDecls = some $ do
+  v <- lIdentifier
+  rop "="
+  e <- expr
+  return (v, e)
+
+eLet = do
   rword "let"
-  var <- l_identifier
-  rop "="
-  e1 <- expr
+  vars <- letDecls
   rword "in"
   e2 <- expr
-  return $ ELet var e1 e2
+  return $ ELet vars e2
 
-e_rec = do
+eRec = do
   rword "rec"
-  var <- l_identifier
-  rop "="
-  e1 <- expr
+  vars <- letDecls
   rword "in"
   e2 <- expr
-  return $ ELetRec var e1 e2
+  return $ ELetRec vars e2
 
-e_if = do
+eIf = do
   rword "if"
   cond <- expr
   rword "then"
   e1 <- expr
   rword "else"
   e2 <- expr
-  return $ EApply (EApply (EApply (EVar $ builtin_prefix ++ "if") cond) e1) e2
+  return $ EApply (EApply (EApply (EVar $ builtinPrefix ++ "if") cond) e1) e2
 
-apply_op (Op _ _ "__special__lambda") e1 e2 = EApply e1 e2
+applyOp (Op _ _ "__special__lambda") e1 e2 = EApply e1 e2
 
-apply_op (Op _ _ name) e1 e2 = EApply (EApply (EVar name) e1) e2
+applyOp (Op _ _ name) e1 e2 = EApply (EApply (EVar name) e1) e2
 
 
-expr_conversion [e] [] [] = e
+exprConversion [e] [] [] = e
 
-expr_conversion (h2:h1:t) (o:to) [] = expr_conversion ((apply_op o h1 h2):t) to []
+exprConversion (h2:h1:t) (o:to) [] = exprConversion (applyOp o h1 h2:t) to []
 
-expr_conversion output [] ((o,e):to) = expr_conversion (e:output) [o] to
+exprConversion output [] ((o,e):to) = exprConversion (e:output) [o] to
 
-expr_conversion
+exprConversion
   output  @(h2:h1                 :t)
   ops     @(ho@(Op pr1 _ _)       :to)
   input   @((o@(Op pr2 as _), h3) :ti) =
   if (as == AssL && pr2 <= pr1) || (as == AssR && pr2 < pr1)
-    then expr_conversion ((apply_op ho h1 h2):t) to input
-    else expr_conversion (h3:output) (o:ops) ti
+    then exprConversion (applyOp ho h1 h2:t) to input
+    else exprConversion (h3:output) (o:ops) ti
 
-expr_conversion _ _ _ = undefined -- should never happen
+exprConversion _ _ _ = undefined -- should never happen
 
 
-named_exp = do
+namedExp = do
   rword "def"
-  var <- l_identifier
+  var <- lIdentifier
   rop "="
   e <- expr
   return (var, e)
 
-toplevel_def =
-      (uncurry NamedExp) <$> named_exp
+toplevelDef =
+      uncurry NamedExp <$> namedExp
 
-lang_parser = between sc eof (some toplevel_def)
+langParser = between sc eof (some toplevelDef)

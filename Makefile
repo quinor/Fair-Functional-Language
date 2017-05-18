@@ -11,4 +11,4 @@ interpreter: stack
 	./stack ghc -- interpreter.hs -isrc
 
 clean:
-	rm interpreter.{hi,o} src/Interpreter/*.{hi,o}
+	rm interpreter.{hi,o} src/Interpreter/*.{hi,o} -f

@@ -38,12 +38,12 @@ data Data =
 
 -- basically AST
 data Exp =
-    ELambda VarE Exp      -- (\Var -> Exp)
-  | ELet VarE Exp Exp     -- let Var = Exp in Exp, Var visible only in second exp
-  | ELetRec VarE Exp Exp  -- letrec Var = Exp in Exp, Var visible in both exps
-  | EApply Exp Exp       -- (Var Var)
-  | EData Data           -- just Data constant
-  | EVar VarE             -- just Var
+    ELambda VarE Exp          -- (\Var -> Exp)
+  | ELet [(VarE, Exp)] Exp    -- let [Var = Exp] in Exp, Vars visible only in second exp
+  | ELetRec [(VarE, Exp)] Exp -- letrec [Var = Exp] in Exp, Vars visible in both exps
+  | EApply Exp Exp            -- (Var Var)
+  | EData Data                -- just Data constant
+  | EVar VarE                 -- just Var
   deriving Show
 
 

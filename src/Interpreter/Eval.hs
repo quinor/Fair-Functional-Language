@@ -1,7 +1,7 @@
 {-# Language FlexibleContexts #-}
 
 module Interpreter.Eval (
-  eval_program,
+  evalProgram,
   exec
 ) where
 import Interpreter.Defs
@@ -15,33 +15,33 @@ import qualified Data.Map as Map
 -- execute the expression (AST) and return the result
 exec :: Exp -> Interpreter Data
 -- run expression and retrieve the result
-eval_program :: Exp -> Data
+evalProgram :: Exp -> Data
 
 -- primitive applivation function
-apply_primitive :: Primitive -> Exp -> Interpreter Data
+applyPrimitive :: Primitive -> Exp -> Interpreter Data
 
 
 
-apply_primitive (Prim1 _ fn) ex = fn ex
-apply_primitive (Prim2 (TLambda _ b) fn) ex = return $ DPrimitive $ Prim1 b $ fn ex
-apply_primitive (Prim3 (TLambda _ b) fn) ex = return $ DPrimitive $ Prim2 b $ fn ex
+applyPrimitive (Prim1 _ fn) ex = fn ex
+applyPrimitive (Prim2 (TLambda _ b) fn) ex = return $ DPrimitive $ Prim1 b $ fn ex
+applyPrimitive (Prim3 (TLambda _ b) fn) ex = return $ DPrimitive $ Prim2 b $ fn ex
 
 
 -- exec helper functions for state monad
 
-next_id :: MonadState (Sequence.Seq a) m => m Int
-next_id = state (\st -> (length st, st))
+nextId :: MonadState (Sequence.Seq a) m => m Int
+nextId = state (\st -> (length st, st))
 
-add_next :: MonadState (Sequence.Seq a) m => a -> m ()
-add_next dt = state (\st -> ((), st Sequence.|> dt))
+addNext :: MonadState (Sequence.Seq a) m => a -> m ()
+addNext dt = state (\st -> ((), st Sequence.|> dt))
 
 
 -- exec implementation
 
 exec ex = case ex of
   EVar var                          -> do
-    id <- reader (\env -> fromJust $ Map.lookup var env)
-    dt <- state (\st -> ((st `Sequence.index` id), st))
+    id <- reader (fromJust . Map.lookup var)
+    dt <- state (\st -> (st `Sequence.index` id, st))
     case dt of
       DLazy ns ex   -> do
         dt_val <- local (const ns) (exec ex)
@@ -53,25 +53,32 @@ exec ex = case ex of
     fun <- exec fun
     case fun of
       DLambda f_ns var def  -> do
-        next <- next_id
+        next <- nextId
         ns <- ask
-        add_next (DLazy ns val)
+        addNext (DLazy ns val)
         local (const $ Map.insert var next f_ns) (exec def)
-      DPrimitive prim       -> apply_primitive prim val
+      DPrimitive prim       -> applyPrimitive prim val
       _                     -> undefined -- you can apply nothig else
-  ELetRec name def ex               -> do
-    next <- next_id
+  ELetRec nameDefs ex              -> do
+    next <- nextId
     ns <- ask
-    let new_ns = (Map.insert name next ns)
-    add_next (DLazy new_ns def)
+    let new_ns = foldr
+          (\((name, _), place) m -> Map.insert name place m)
+          ns
+          (zip nameDefs [next..])
+    mapM_ (\(_, e) -> addNext $ DLazy new_ns e) nameDefs
     local (const new_ns) (exec ex)
-  ELet name def ex                  -> do
-    next <- next_id
+  ELet nameDefs ex                 -> do
+    next <- nextId
     ns <- ask
-    add_next (DLazy ns def)
-    local (Map.insert name next) (exec ex)
+    let new_ns = foldr
+          (\((name, _), place) m -> Map.insert name place m)
+          ns
+          (zip nameDefs [next..])
+    mapM_ (\(_, e) -> addNext $ DLazy ns e) nameDefs
+    local (const new_ns) (exec ex)
   ELambda var def                   -> do
     ns <- ask
     return $ DLambda ns var def
 
-eval_program prog = fst $ runIdentity $ runStateT (runReaderT (exec prog) Map.empty) Sequence.empty
+evalProgram prog = fst $ runIdentity $ runStateT (runReaderT (exec prog) Map.empty) Sequence.empty

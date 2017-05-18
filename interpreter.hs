@@ -1,4 +1,4 @@
-import Interpreter.Execute (run_program)
+import Interpreter.Execute (runProgram)
 import System.Environment
 
 main :: IO ()
@@ -7,4 +7,4 @@ main = do
   fn <- if null args
     then getContents
     else readFile $ head args
-  run_program fn
+  runProgram fn
