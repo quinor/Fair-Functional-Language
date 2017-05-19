@@ -22,9 +22,9 @@ applyPrimitive :: Primitive -> Exp -> Interpreter Data
 
 
 
-applyPrimitive (Prim1 _ fn) ex = fn ex
-applyPrimitive (Prim2 (TLambda _ b) fn) ex = return $ DPrimitive $ Prim1 b $ fn ex
-applyPrimitive (Prim3 (TLambda _ b) fn) ex = return $ DPrimitive $ Prim2 b $ fn ex
+applyPrimitive (Prim1 _ _ fn) ex = fn ex
+applyPrimitive (Prim2 name (TLambda _ b) fn) ex = return $ DPrimitive $ Prim1 name b $ fn ex
+applyPrimitive (Prim3 name (TLambda _ b) fn) ex = return $ DPrimitive $ Prim2 name b $ fn ex
 
 
 -- exec helper functions for state monad

@@ -7,19 +7,24 @@ import Interpreter.Typecheck
 import Interpreter.Eval
 import Interpreter.Primitives
 import Data.Either
+import Text.Megaparsec
 
 --run program from file
-runProgram :: String -> IO ()
+runProgram :: String -> String -> IO ()
 
-runProgram f = do
-  let prog = parseStr f
+runProgram fn f = do
+  let prog = parseStr fn f
   case prog of
-    Left err    -> print err
+    Left err    -> putStrLn $ parseErrorPretty err
     Right tlds  -> mapM_ (
       \(NamedExp n e) -> do
         let
           e' = prelude e
           t = checkType e'
           d = evalProgram e'
-        putStrLn $ n ++ " = " ++ show d ++ " :: " ++ show t
+        putStrLn $ "processing entry " ++ show n ++ ":"
+        putStrLn $ "code: \n" ++ show e
+        putStrLn $ "type: " ++ show t
+        putStrLn $ "result: " ++ show d
+        putStrLn ""
       ) tlds

@@ -13,8 +13,8 @@ import qualified Data.Map as Map
 type ParseResult = Either (ParseError (Token String) Dec) [TLD]
 
 --parse program from string
-parseStr :: String -> ParseResult
-parseStr = parse langParser "<none>"
+parseStr :: String -> String -> ParseResult
+parseStr = parse langParser
 
 --parser of the entire language
 langParser :: Parser [TLD]
@@ -72,7 +72,7 @@ exprConversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
 namedExp :: Parser (VarE, Exp)
 toplevelDef :: Parser TLD
 
-reserved = ["def", "data", "type", "True", "False", "let", "rec", "match", "with", "in", "if",
+reserved = ["def", "data", "type", "True", "False", "let", "rec", "and", "match", "with", "in", "if",
   "then", "else", "\\", "->", "="]
 
 getPos = do
@@ -154,7 +154,7 @@ eLambda = do
   return $ foldr (ELambda p) e vars
 
 letDecls :: Parser [(VarE, Exp)]
-letDecls = some $ do
+letDecls = (\x -> sepBy1 x (rword "and")) $ do
   v <- lIdentifier
   rop "="
   e <- expr

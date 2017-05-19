@@ -5,33 +5,42 @@ Can be thought of as smoke test.
 
 
 # super basic test, "hello world" style
-def sum_exp = 1 + 2
+def sum = 1 + 2
+
+# test of operator application order (if "10/2" isn't actually 2/10)
+def order = 10/2
 
 # test of let expression
-def let_exp = let
+def let_t = let
   num = 42
   in num
 
 # lambda expression
-def lambda_exp = let
+def lambda = let
   add_one = \n -> n+1
   in add_one 12
 
 # if expression
-def if_exp = let
+def if_t = let
   if_t = \b -> if b
     then 42
     else 13
   in if_t True
 
 # recursion
-def fact_exp = rec
+def fact = rec
   factorial = \n -> if n == 0
     then 1
     else n * factorial (n-1)
   in factorial 5
 
 # polymorphism
-def poly_exp = let
+def poly = let
   id = \x -> x
   in if (id True) then (id 1) else 0
+
+# multi let
+def multilet =
+  let a = 5
+  and b = 10
+  in a+b

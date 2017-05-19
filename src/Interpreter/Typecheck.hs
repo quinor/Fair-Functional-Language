@@ -133,9 +133,9 @@ inferType env@(TypeEnv envDict) ex = case ex of
       return (nullSub, t)
   EData _ dt                          -> case dt of
     DPrimitive pr -> case pr of
-      Prim1 t _ -> return (nullSub, t)
-      Prim2 t _ -> return (nullSub, t)
-      Prim3 t _ -> return (nullSub, t)
+      Prim1 _ t _ -> return (nullSub, t)
+      Prim2 _ t _ -> return (nullSub, t)
+      Prim3 _ t _ -> return (nullSub, t)
     DInt _        -> return (nullSub, TInt)
     DBool _       -> return (nullSub, TBool)
     _             -> throw "how did you manage to get suc data literal?" -- no literals of other types allowed

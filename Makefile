@@ -11,3 +11,5 @@ interpreter: stack
 
 clean:
 	rm interpreter.{hi,o} src/Interpreter/*.{hi,o} -f
+
+.PHONY: all interpreter clean

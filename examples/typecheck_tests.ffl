@@ -1,0 +1,8 @@
+{#
+This program tests typecheck on both positive and negative examples.
+#}
+
+def integer = 5
+
+def boolean = True
+
