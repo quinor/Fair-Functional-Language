@@ -6,3 +6,6 @@ def integer = 5
 
 def boolean = True
 
+def sum_error = True + 5
+
+def or_error = 5 || 3

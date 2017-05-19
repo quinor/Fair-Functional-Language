@@ -3,7 +3,7 @@ module Interpreter.Typecheck (
 ) where
 import Interpreter.Defs
 import Control.Monad.State
-import Control.Monad.Identity
+import Control.Monad.Except
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe
@@ -13,7 +13,7 @@ import Data.Maybe
 -- and type infered (after the substitution has been made)
 inferType :: TypeEnv -> Exp -> TypeChecker (Sub, Type)
 -- check returned type of a program
-checkType :: Exp -> Type
+checkType :: Exp -> Either (Position, String) Type
 
 
 -- type scheme (forall variables type)
@@ -31,19 +31,16 @@ class Types a where
 
 newtype TypeEnv = TypeEnv (Map.Map VarE TypeScheme)
 
-type TypeChecker a = StateT Int Identity a
+type TypeChecker = ExceptT (Position, String) (State Int)
 
 --empty substitution
 nullSub :: Sub
-
---error
-throw :: String -> TypeChecker a
 
 --compose substitutions
 compose :: Sub -> Sub -> Sub
 
 --unification (mgu)
-unify :: Type -> Type -> TypeChecker Sub
+unify :: Position -> Type -> Type -> TypeChecker Sub
 
 --create fresh type variable
 newVar :: String -> TypeChecker Type -- TVar vq
@@ -88,24 +85,22 @@ instance Types TypeEnv where
 
 nullSub = Map.empty
 
-throw s = undefined --todo: fuckin' fix it!
-
 compose s1 s2 = s1 `Map.union` Map.map (applySub s1) s2
 
-unify t1 t2 = case (t1, t2) of
+unify p t1 t2 = case (t1, t2) of
   (TBool, TBool)                  -> return nullSub
   (TInt, TInt)                    -> return nullSub
   (TLambda a b, TLambda c d)  -> do
-    u1 <- unify a c
-    u2 <- unify (applySub u1 b) (applySub u1 d)
+    u1 <- unify p a c
+    u2 <- unify p (applySub u1 b) (applySub u1 d)
     return $ u1 `compose` u2
-  (t, TVar a)                   -> unify (TVar a) t
+  (t, TVar a)                   -> unify p (TVar a) t
   (TVar a, t)                   -> case t of
     TVar x | a == x   -> return nullSub
     x                 -> if a `Set.member` freeVars x
-      then throw "occur check" -- occur check
+      then throwError (p, "occur check") -- occur check
       else return $ Map.singleton a x
-  (_, _)                          -> throw "expressions don't unify!" -- error
+  (_, _)                          -> throwError (p, "expressions don't unify!") -- error
 
 
 newVar pref = do
@@ -126,27 +121,28 @@ instantiate (Scheme vars t) = do
 --inferType implementation
 
 inferType env@(TypeEnv envDict) ex = case ex of
-  EVar _ var                          -> case Map.lookup var envDict of
-    Nothing -> throw $ "no such variable: " ++ var
+  EVar pos var                          -> case Map.lookup var envDict of
+    Nothing -> throwError (pos, "no such variable: " ++ var)
     Just ts -> do
       t <- instantiate ts
       return (nullSub, t)
   EData _ dt                          -> case dt of
     DPrimitive pr -> case pr of
+      Prim0 _ t _ -> return (nullSub, t)
       Prim1 _ t _ -> return (nullSub, t)
       Prim2 _ t _ -> return (nullSub, t)
       Prim3 _ t _ -> return (nullSub, t)
     DInt _        -> return (nullSub, TInt)
     DBool _       -> return (nullSub, TBool)
-    _             -> throw "how did you manage to get suc data literal?" -- no literals of other types allowed
-  EApply _ fun val                    -> do
+    _             -> undefined -- no literals of other types possible
+  EApply pos fun val                    -> do
     tv <- newVar "va_app_"
     (s1, t1) <- inferType env fun
     let env' = applySub s1 env
     (s2, t2) <- inferType env' val
-    s3 <- unify (applySub s2 t1) (TLambda t2 tv)
+    s3 <- unify pos (applySub s2 t1) (TLambda t2 tv)
     return (s1 `compose` s2 `compose` s3, applySub s3 tv)
-  ELetRec _ nameDefs ex              -> do -- TODO: multiple defs
+  ELetRec pos nameDefs ex              -> do -- TODO: multiple defs
     --insert type variables
     new <- foldM
       (\ oldEnv@(TypeEnv oEDict) (n, _) -> do
@@ -161,7 +157,7 @@ inferType env@(TypeEnv envDict) ex = case ex of
         (s, t) <- inferType oldEnv e
         let oldEnv'@(TypeEnv dict) = applySub s oldEnv
         tv <- (instantiate $ fromJust $ Map.lookup n dict)
-        s' <- unify t tv
+        s' <- unify pos t tv
         return (oldSub `compose` s `compose` s', applySub s' oldEnv')
       )
       (nullSub, new)
@@ -186,4 +182,5 @@ inferType env@(TypeEnv envDict) ex = case ex of
     (s, t) <- inferType newEnv def
     return (s, TLambda (applySub s tv) t)
 
-checkType e = snd $ fst $ runIdentity $ runStateT (inferType (TypeEnv Map.empty) e) 0
+checkType e = (return . snd) =<< (fst $ runState (runExceptT $ inferType (TypeEnv Map.empty) e) 0)
+--(lift snd) $ fst $

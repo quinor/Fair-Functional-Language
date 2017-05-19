@@ -7,15 +7,18 @@ module Interpreter.Defs (
   TLD(..),
   Type(..),
   Primitive(..),
+  Dataspace,
+  Namespace,
+  Stacktrace,
   Interpreter,
   takePos,
-  takeName
+  takeName,
+  printStacktrace
 ) where
 import qualified Data.Sequence as Sequence
 import qualified Data.Map as Map
-import Control.Monad.Reader
 import Control.Monad.State
-import Control.Monad.Identity
+import Control.Monad.Except
 import qualified Text.PrettyPrint as PP
 
 
@@ -25,20 +28,23 @@ type VarT = String
 
 type Dataspace = Sequence.Seq Data
 type Namespace = Map.Map VarE Int
-type Interpreter a = ReaderT Namespace (StateT Dataspace Identity) a
+type Stacktrace = [Position]
+type Interpreter a = ExceptT (Stacktrace, String) (State Dataspace) a
 
 
 
 -- data type in the language
 data Data =
-      DLazy Namespace Exp
+      DRef Int
+    | DUndefined
+    | DLazy Namespace Stacktrace Exp
     | DLambda Namespace VarE Exp
     | DPrimitive Primitive
     | DInt Int
     | DBool Bool
 
 -- position in the source file: filename, line, column
-data Position = Position String Int Int deriving Show
+data Position = Position String Int Int
 
 -- basically AST
 data Exp =
@@ -72,15 +78,20 @@ data Type =
 
 
 -- primitive function with type, string is primitive name (for docs/error purposes)
+-- stacktrace argument is for failing when primitive fails (currently div by 0 only)
 data Primitive =
-    Prim1 String Type (Exp -> Interpreter Data)
-  | Prim2 String Type (Exp -> Exp -> Interpreter Data)
-  | Prim3 String Type (Exp -> Exp -> Exp -> Interpreter Data)
+    Prim0 String Type (Interpreter Data)
+  | Prim1 String Type (Data -> Stacktrace -> Interpreter Data)
+  | Prim2 String Type (Data -> Data -> Stacktrace -> Interpreter Data)
+  | Prim3 String Type (Data -> Data -> Data -> Stacktrace -> Interpreter Data)
 
 takeName :: Primitive -> String
 takeName (Prim1 n _ _) = n
 takeName (Prim2 n _ _) = n
 takeName (Prim3 n _ _) = n
+
+printStacktrace :: Stacktrace -> String
+printStacktrace l = foldr1 (++) (map (\e -> show e ++ "\n") l)
 
 
 -- ====================== CONVENIENCE SHOW CLASSES ============================
@@ -93,18 +104,23 @@ instance Show Data where
   showsPrec _ x = shows (prData x)
 
 prData :: Data -> PP.Doc
+prData (DRef x) = PP.text "ref" PP.<+> ppShow x
+prData DUndefined = PP.text "undefined"
 prData (DInt x) = ppShow x
 prData (DBool b) = ppShow b
 prData (DPrimitive p) = ppShow p
 prData (DLambda _ _ _) = PP.text "Lambda function"
 
 
+instance Show Position where
+  showsPrec _ (Position fn ln cl) = showString $ fn ++ ":" ++ show ln ++ ":" ++ show cl
+
 
 instance Show Exp where
   showsPrec _ x = shows $ prExp x
 
 letBlock :: [(VarE, Exp)] -> PP.Doc
-letBlock a = foldl1
+letBlock a = foldr1
   (\t1 t2 -> (t1 PP.<+> PP.text "and") PP.$$ t2)
   (map ((PP.nest 2) . \(n, e) -> PP.text n PP.<+> PP.text "=" PP.<+> prExp e) a)
 
@@ -151,6 +167,7 @@ instance Show Primitive where
   showsPrec _ x = shows $ prPrim x
 
 prPrim :: Primitive -> PP.Doc
+prPrim (Prim0 n t _) = PP.text "Prim0" PP.<+> PP.text n PP.<+> PP.parens (prType t)
 prPrim (Prim1 n t _) = PP.text "Prim1" PP.<+> PP.text n PP.<+> PP.parens (prType t)
 prPrim (Prim2 n t _) = PP.text "Prim2" PP.<+> PP.text n PP.<+> PP.parens (prType t)
 prPrim (Prim3 n t _) = PP.text "Prim3" PP.<+> PP.text n PP.<+> PP.parens (prType t)

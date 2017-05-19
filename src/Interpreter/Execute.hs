@@ -20,11 +20,18 @@ runProgram fn f = do
       \(NamedExp n e) -> do
         let
           e' = prelude e
-          t = checkType e'
-          d = evalProgram e'
         putStrLn $ "processing entry " ++ show n ++ ":"
         putStrLn $ "code: \n" ++ show e
-        putStrLn $ "type: " ++ show t
-        putStrLn $ "result: " ++ show d
+        case checkType e' of
+          Left (pos, e)  -> do
+           putStrLn "Typecheck failure:"
+           putStrLn $ (show pos) ++ ": " ++ e
+          Right t -> do
+            putStrLn $ "type: " ++ show t
+            case evalProgram e' of
+              Left (st, e)  -> do
+                putStrLn $ "Eval failure: " ++ e
+                putStr $ printStacktrace st
+              Right d -> putStrLn $ "result: " ++ show d
         putStrLn ""
       ) tlds
