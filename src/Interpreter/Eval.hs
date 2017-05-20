@@ -1,3 +1,5 @@
+{-# Options -Wall #-}
+
 {-# Language FlexibleContexts #-}
 {-# Language LambdaCase #-}
 
@@ -26,9 +28,10 @@ evalProgram :: Exp -> Either (Stacktrace, String) Data
 applyPrimitive :: Stacktrace -> Primitive -> Data -> Interpreter Data
 
 applyPrimitive _ (Prim0 _ _ _) _                    = undefined --should never happen!
-applyPrimitive st (Prim1 name (TLambda _ b) fn) ex  = return $ DPrimitive $ Prim0 name b $ fn ex st
+applyPrimitive _ (Prim1 name (TLambda _ b) fn) ex  = return $ DPrimitive $ Prim0 name b $ fn ex
 applyPrimitive _ (Prim2 name (TLambda _ b) fn) ex   = return $ DPrimitive $ Prim1 name b $ fn ex
 applyPrimitive _ (Prim3 name (TLambda _ b) fn) ex   = return $ DPrimitive $ Prim2 name b $ fn ex
+applyPrimitive _ _ _                                = undefined
 
 
 -- exec helper functions for state monad
@@ -42,37 +45,37 @@ addNext dt = state (\st -> ((), st Sequence.|> dt))
 
 -- computeData implementation
 computeData st (DRef pos) = do
-  state (\st -> (st `Sequence.index` pos, st)) >>= \case
-    DLazy ns st ex  -> do
-      state (\st -> ((), Sequence.update pos DUndefined st))
-      dt_val <- exec ns st ex >>= computeData st
-      state (\st -> ((), Sequence.update pos dt_val st))
+  state (\sta -> (sta `Sequence.index` pos, sta)) >>= \case
+    DLazy ns st' ex  -> do
+      state (\sta -> ((), Sequence.update pos DUndefined sta))
+      dt_val <- exec ns st' ex >>= computeData st'
+      state (\sta -> ((), Sequence.update pos dt_val sta))
       return dt_val
     -- only happens between lines 47..48
     DUndefined      -> throwError (st, "unsolvable infinite recursion!")
     x               -> computeData st x
 
-computeData st (DPrimitive (Prim0 _ _ d)) = d >>= computeData st
-computeData _ (DLazy ns st ex) = undefined --should never ever happen!
+computeData st (DPrimitive (Prim0 _ _ d)) = (d st) >>= computeData st
+computeData _ (DLazy _ _ _) = undefined --should never ever happen!
 computeData _ a = return a
 
 
 -- exec implementation
-exec ns st ex = case ex of
-  EVar pos var                        -> do
+exec ns st expr = case expr of
+  EVar _ var                          -> do
     return $ DRef $ fromJust $ Map.lookup var ns
   EData _ dt                          -> return dt
   EApply pos fun val                  -> do
     funLazy <- exec ns (pos:st) fun
-    fun <- computeData st funLazy
+    funVal <- computeData st funLazy
     next <- nextId
     addNext (DLazy ns st val)
-    case fun of
+    case funVal of
       DLambda f_ns var def  -> do
         exec (Map.insert var next f_ns) (pos:st) def
       DPrimitive prim       -> applyPrimitive st prim (DRef next)
-      x                     -> undefined -- you can apply nothig else
-  ELetRec pos nameDefs ex            -> do
+      _                     -> undefined -- you can apply nothig else
+  ELetRec pos nameDefs ex             -> do
     next <- nextId
     let new_ns = foldr
           (\((name, _), place) m -> Map.insert name place m)
@@ -80,7 +83,7 @@ exec ns st ex = case ex of
           (zip nameDefs [next..])
     mapM_ (\(_, e) -> addNext $ DLazy new_ns st e) nameDefs
     exec new_ns (pos:st) ex
-  ELet pos nameDefs ex               -> do
+  ELet pos nameDefs ex                -> do
     next <- nextId
     let new_ns = foldr
           (\((name, _), place) m -> Map.insert name place m)
@@ -88,7 +91,7 @@ exec ns st ex = case ex of
           (zip nameDefs [next..])
     mapM_ (\(_, e) -> addNext $ DLazy ns st e) nameDefs
     exec new_ns (pos:st) ex
-  ELambda pos var def                 -> do
+  ELambda _ var def                   -> do
     return $ DLambda ns var def
 
 evalProgram prog = fst $ runState (runExceptT $ exec Map.empty [] prog >>= computeData []) Sequence.empty

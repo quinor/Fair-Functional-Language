@@ -1,3 +1,5 @@
+{-# Options -Wall #-}
+
 module Interpreter.Execute (
   runProgram
 ) where
@@ -6,7 +8,6 @@ import Interpreter.Parser
 import Interpreter.Typecheck
 import Interpreter.Eval
 import Interpreter.Primitives
-import Data.Either
 import Text.Megaparsec
 
 --run program from file
@@ -23,14 +24,14 @@ runProgram fn f = do
         putStrLn $ "processing entry " ++ show n ++ ":"
         putStrLn $ "code: \n" ++ show e
         case checkType e' of
-          Left (pos, e)  -> do
+          Left (pos, err)  -> do
            putStrLn "Typecheck failure:"
-           putStrLn $ (show pos) ++ ": " ++ e
+           putStrLn $ (show pos) ++ ": " ++ err
           Right t -> do
             putStrLn $ "type: " ++ show t
             case evalProgram e' of
-              Left (st, e)  -> do
-                putStrLn $ "Eval failure: " ++ e
+              Left (st, err)  -> do
+                putStrLn $ "Eval failure: " ++ err
                 putStr $ printStacktrace st
               Right d -> putStrLn $ "result: " ++ show d
         putStrLn ""

@@ -1,3 +1,5 @@
+{-# Options -Wall #-}
+
 module Interpreter.Typecheck (
   checkType
 ) where
@@ -8,6 +10,8 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Maybe
 
+
+--import Debug.Trace
 
 -- perform type checking on the expression and return necessary substitution
 -- and type infered (after the substitution has been made)
@@ -85,22 +89,24 @@ instance Types TypeEnv where
 
 nullSub = Map.empty
 
-compose s1 s2 = s1 `Map.union` Map.map (applySub s1) s2
+compose s1 s2 = Map.map (applySub s1) s2 `Map.union` s1
 
 unify p t1 t2 = case (t1, t2) of
-  (TBool, TBool)                  -> return nullSub
-  (TInt, TInt)                    -> return nullSub
+  (TBool, TBool)              -> return nullSub
+  (TInt, TInt)                -> return nullSub
   (TLambda a b, TLambda c d)  -> do
     u1 <- unify p a c
     u2 <- unify p (applySub u1 b) (applySub u1 d)
-    return $ u1 `compose` u2
-  (t, TVar a)                   -> unify p (TVar a) t
-  (TVar a, t)                   -> case t of
+    return $ u2 `compose` u1
+  (TVar a, t)                 -> case t of -- should wipe a out of existence
     TVar x | a == x   -> return nullSub
     x                 -> if a `Set.member` freeVars x
       then throwError (p, "occur check") -- occur check
       else return $ Map.singleton a x
-  (_, _)                          -> throwError (p, "expressions don't unify!") -- error
+  -- must be later becouse overlaps with previous one
+  (t, TVar a)                 -> unify p (TVar a) t
+  (_, _)                      -> throwError
+    (p, "expressions don't unify! " ++ show t1 ++ " and " ++ show t2) -- unification error
 
 
 newVar pref = do
@@ -118,9 +124,10 @@ instantiate (Scheme vars t) = do
   let s = Map.fromList (zip vars newVars)
   return $ applySub s t
 
+
 --inferType implementation
 
-inferType env@(TypeEnv envDict) ex = case ex of
+inferType env@(TypeEnv envDict) expr = case expr of
   EVar pos var                          -> case Map.lookup var envDict of
     Nothing -> throwError (pos, "no such variable: " ++ var)
     Just ts -> do
@@ -141,11 +148,11 @@ inferType env@(TypeEnv envDict) ex = case ex of
     let env' = applySub s1 env
     (s2, t2) <- inferType env' val
     s3 <- unify pos (applySub s2 t1) (TLambda t2 tv)
-    return (s1 `compose` s2 `compose` s3, applySub s3 tv)
-  ELetRec pos nameDefs ex              -> do -- TODO: multiple defs
+    return (s3 `compose` s2 `compose` s1, applySub s3 tv)
+  ELetRec pos nameDefs ex              -> do -- TODO: generalize!!!!!!
     --insert type variables
     new <- foldM
-      (\ oldEnv@(TypeEnv oEDict) (n, _) -> do
+      (\ (TypeEnv oEDict) (n, _) -> do
         tv <- newVar "va_letrec_"
         return $ TypeEnv $ Map.insert n (Scheme [] tv) oEDict
       )
@@ -158,24 +165,25 @@ inferType env@(TypeEnv envDict) ex = case ex of
         let oldEnv'@(TypeEnv dict) = applySub s oldEnv
         tv <- (instantiate $ fromJust $ Map.lookup n dict)
         s' <- unify pos t tv
-        return (oldSub `compose` s `compose` s', applySub s' oldEnv')
+        return (s' `compose` s `compose` oldSub, applySub s' oldEnv')
       )
       (nullSub, new)
       nameDefs
     (sx, tx) <- inferType new' ex
-    return (sub `compose` sx, tx)
+    return (sx `compose` sub, tx)
   ELet _ nameDefs ex                 -> do
     (sub, _, new) <- foldM
-      (\ (oldSub, oldLightEnv, oldRichEnv@(TypeEnv oREDict)) (n, e) -> do
+      (\ (oldSub, oldLightEnv, TypeEnv oREDict) (n, e) -> do
         (s, t) <- inferType oldLightEnv e
+--        traceM $ "type of " ++ n ++ ": " ++ show t
         let lightEnv = applySub s oldLightEnv
         let richEnv = TypeEnv $ Map.insert n (generalize lightEnv t) oREDict
-        return (oldSub `compose` s, lightEnv, richEnv)
+        return (s `compose` oldSub, lightEnv, richEnv)
       )
       (nullSub, env, env)
       nameDefs
     (sx, tx) <- inferType new ex
-    return (sub `compose` sx, tx)
+    return (sx `compose` sub, tx)
   ELambda _ var def                   -> do
     tv <- newVar "va_lambda_"
     let newEnv = TypeEnv $ Map.insert var (Scheme [] tv) envDict
@@ -183,4 +191,3 @@ inferType env@(TypeEnv envDict) ex = case ex of
     return (s, TLambda (applySub s tv) t)
 
 checkType e = (return . snd) =<< (fst $ runState (runExceptT $ inferType (TypeEnv Map.empty) e) 0)
---(lift snd) $ fst $

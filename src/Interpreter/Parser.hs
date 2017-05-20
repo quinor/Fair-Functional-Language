@@ -1,3 +1,5 @@
+{-# Options -Wall #-}
+
 module Interpreter.Parser (
   parseStr,
   ParseResult
@@ -9,6 +11,7 @@ import Text.Megaparsec
 import Text.Megaparsec.String
 import qualified Text.Megaparsec.Lexer as L
 import qualified Data.Map as Map
+
 
 type ParseResult = Either (ParseError (Token String) Dec) [TLD]
 
@@ -117,7 +120,7 @@ operator = try $ do
 expr = do
   h <- exprSingle
   t <- many (try $ (,) <$> operator <*> exprSingle)
-  return $ exprConversion [h] [] t -- TODO: stack expr parsing algorithm
+  return $ exprConversion [h] [] t -- TODO: custom operators
 
 exprSingle =
       eBoolean
@@ -130,15 +133,15 @@ exprSingle =
   <|> parens expr
 
 
-eInteger = do
-  p <- getPos
-  i <- fromInteger <$> lexeme L.integer
-  return $ EData p $ DInt i
-
 eBoolean = do
   p <- getPos
   b <- (rword "True" *> pure True) <|> (rword "False" *> pure False)
   return $ EData p $ DBool b
+
+eInteger = do
+  p <- getPos
+  i <- fromInteger <$> lexeme L.integer
+  return $ EData p $ DInt i
 
 eVariable = do
   p <- getPos

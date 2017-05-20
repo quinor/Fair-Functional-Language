@@ -9,3 +9,7 @@ def boolean = True
 def sum_error = True + 5
 
 def or_error = 5 || 3
+
+def if_poly = let
+  ip = \ a -> if True then a else a
+  in if (ip True) then (ip 1) else (ip 2)

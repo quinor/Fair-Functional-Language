@@ -10,6 +10,6 @@ interpreter: stack
 	./stack install --local-bin-path=$(shell pwd)
 
 clean:
-	rm interpreter.{hi,o} src/Interpreter/*.{hi,o} -f
+	rm -r .stack-work
 
 .PHONY: all interpreter clean

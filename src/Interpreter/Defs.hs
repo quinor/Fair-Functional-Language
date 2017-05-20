@@ -1,3 +1,5 @@
+{-# Options -Wall #-}
+
 module Interpreter.Defs (
   VarE,
   VarT,
@@ -80,12 +82,13 @@ data Type =
 -- primitive function with type, string is primitive name (for docs/error purposes)
 -- stacktrace argument is for failing when primitive fails (currently div by 0 only)
 data Primitive =
-    Prim0 String Type (Interpreter Data)
+    Prim0 String Type (Stacktrace -> Interpreter Data)
   | Prim1 String Type (Data -> Stacktrace -> Interpreter Data)
   | Prim2 String Type (Data -> Data -> Stacktrace -> Interpreter Data)
   | Prim3 String Type (Data -> Data -> Data -> Stacktrace -> Interpreter Data)
 
 takeName :: Primitive -> String
+takeName (Prim0 n _ _) = n
 takeName (Prim1 n _ _) = n
 takeName (Prim2 n _ _) = n
 takeName (Prim3 n _ _) = n
@@ -110,6 +113,7 @@ prData (DInt x) = ppShow x
 prData (DBool b) = ppShow b
 prData (DPrimitive p) = ppShow p
 prData (DLambda _ _ _) = PP.text "Lambda function"
+prData (DLazy _ _ _) = undefined -- non-printable
 
 
 instance Show Position where
