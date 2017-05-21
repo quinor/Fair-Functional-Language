@@ -13,3 +13,13 @@ def or_error = 5 || 3
 def if_poly = let
   ip = \ a -> if True then a else a
   in if (ip True) then (ip 1) else (ip 2)
+
+def rec_inference = rec
+      even  = \x a b -> if x == 0 then a else odd (x-1) b a
+  and odd   = \x a b -> if x == 0 then b else if x == 1 then a else even (x-1) b a
+  in if even 5 True False then even 4 42 13 else even 6 13 42
+
+def rec_inference_2 = rec
+      id = \x -> x
+  and num = id 5
+  in id True

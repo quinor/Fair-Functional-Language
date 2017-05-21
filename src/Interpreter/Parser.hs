@@ -10,7 +10,9 @@ import Control.Monad (void)
 import Text.Megaparsec
 import Text.Megaparsec.String
 import qualified Text.Megaparsec.Lexer as L
-import qualified Data.Map as Map
+import qualified Data.Map as M
+import qualified Data.Graph as G
+import qualified Data.Set as S
 
 
 type ParseResult = Either (ParseError (Token String) Dec) [TLD]
@@ -30,8 +32,8 @@ data Op = Op Int Ass VarE deriving Show -- precedence, associativity, function n
 
 
 
-opMap :: Map.Map String Op
-opMap = Map.fromList [
+opMap :: M.Map String Op
+opMap = M.fromList [
   ("$", Op 0 AssR "__special__lambda"),
   ("||", Op 2 AssL $ builtinPrefix ++ "or"),
   ("&&", Op 3 AssL $ builtinPrefix ++ "and"),
@@ -113,7 +115,7 @@ operator = try $ do
   s <- lexeme $ many (oneOf "=-.:/\\~<>!@$%^&*+{}|?") -- reserved: [](),_"'`
   if s `elem` reserved
     then fail $ "forbidden keyword symbol: " ++ show s ++ " cannot be an operator"
-    else case Map.lookup s opMap of
+    else case M.lookup s opMap of
       Just x  -> return x
       Nothing -> fail $ "no such operator: " ++ show s
 
@@ -177,7 +179,7 @@ eRec = do
   vars <- letDecls
   rword "in"
   e2 <- expr
-  return $ ELetRec p vars e2
+  return $ orderRecClauses p vars e2
 
 eIf = do
   p0 <- getPos
@@ -215,6 +217,23 @@ exprConversion
     else exprConversion (h3:output) (o:ops) ti
 
 exprConversion _ _ _ = undefined -- should never happen
+
+
+getVars :: Exp -> S.Set VarE
+getVars ex = case ex of
+  EVar _ v        -> S.singleton v
+  EData _ _       -> S.empty
+  EApply _ e1 e2  -> getVars e1 `S.union` getVars e2
+  ELet _ l e      -> (S.unions $ map (getVars . snd) l) `S.union` (getVars e S.\\ (S.fromList $ map fst l))
+  ELetRec _ l e   -> (getVars e `S.union` (S.unions $ map (getVars . snd) l)) S.\\ (S.fromList $ map fst l)
+  ELambda _ n e   -> getVars e S.\\ S.singleton n
+
+orderRecClauses :: Position -> [(VarE, Exp)] -> Exp -> Exp
+orderRecClauses p l ex = let
+  labels = map fst l
+  gr = map (\(n, e) -> ((n, e), n, filter (\a -> S.member a $ getVars e) labels)) l
+  scc = map G.flattenSCC $ G.stronglyConnComp gr
+  in foldr (ELetRec p) ex scc
 
 
 namedExp = do

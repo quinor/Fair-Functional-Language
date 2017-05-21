@@ -13,7 +13,7 @@ import Control.Monad.State
 import Control.Monad.Except
 import Data.Maybe
 import qualified Data.Sequence as Sequence
-import qualified Data.Map as Map
+import qualified Data.Map as M
 
 -- execute the expression (AST) and return the result
 exec :: Namespace -> Stacktrace -> Exp -> Interpreter Data
@@ -63,7 +63,7 @@ computeData _ a = return a
 -- exec implementation
 exec ns st expr = case expr of
   EVar _ var                          -> do
-    return $ DRef $ fromJust $ Map.lookup var ns
+    return $ DRef $ fromJust $ M.lookup var ns
   EData _ dt                          -> return dt
   EApply pos fun val                  -> do
     funLazy <- exec ns (pos:st) fun
@@ -72,13 +72,13 @@ exec ns st expr = case expr of
     addNext (DLazy ns st val)
     case funVal of
       DLambda f_ns var def  -> do
-        exec (Map.insert var next f_ns) (pos:st) def
+        exec (M.insert var next f_ns) (pos:st) def
       DPrimitive prim       -> applyPrimitive st prim (DRef next)
       _                     -> undefined -- you can apply nothig else
   ELetRec pos nameDefs ex             -> do
     next <- nextId
     let new_ns = foldr
-          (\((name, _), place) m -> Map.insert name place m)
+          (\((name, _), place) m -> M.insert name place m)
           ns
           (zip nameDefs [next..])
     mapM_ (\(_, e) -> addNext $ DLazy new_ns st e) nameDefs
@@ -86,7 +86,7 @@ exec ns st expr = case expr of
   ELet pos nameDefs ex                -> do
     next <- nextId
     let new_ns = foldr
-          (\((name, _), place) m -> Map.insert name place m)
+          (\((name, _), place) m -> M.insert name place m)
           ns
           (zip nameDefs [next..])
     mapM_ (\(_, e) -> addNext $ DLazy ns st e) nameDefs
@@ -94,4 +94,4 @@ exec ns st expr = case expr of
   ELambda _ var def                   -> do
     return $ DLambda ns var def
 
-evalProgram prog = fst $ runState (runExceptT $ exec Map.empty [] prog >>= computeData []) Sequence.empty
+evalProgram prog = fst $ runState (runExceptT $ exec M.empty [] prog >>= computeData []) Sequence.empty
