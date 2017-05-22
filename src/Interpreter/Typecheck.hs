@@ -224,5 +224,6 @@ inferType env@(TypeEnv envDict) expr = case expr of
     let newEnv = TypeEnv $ M.insert var (Scheme [] tv) envDict
     (s, t) <- inferType newEnv def
     return (s, TLambda (applySub s tv) t)
+  _                                   -> undefined
 
 checkType e = (return . snd) =<< (fst $ runState (runExceptT $ inferType (TypeEnv M.empty) e) 0)

@@ -93,6 +93,7 @@ exec ns st expr = case expr of
     exec new_ns (pos:st) ex
   ELambda _ var def                   -> do
     return $ DLambda ns var def
+  _                                   -> undefined
 
 evalProgram prog = fst $ runState
   (runExceptT $

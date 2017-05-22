@@ -25,15 +25,6 @@ parseStr = parse langParser
 langParser :: Parser [TLD]
 
 
-data Ass = AssL | AssR deriving (Eq, Show)
-
-data Op = Op Int Ass VarE deriving Show -- precedence, associativity, function name
-
-type OpMap = M.Map String Op
-
-
-
-
 -- parser utility functions and definitions
 reserved :: [String]
 getPos :: Parser Position
@@ -52,7 +43,7 @@ uIdentifier :: Parser String
 eBoolean :: Parser Exp
 eInteger :: Parser Exp
 eVariable :: Parser Exp
-operator :: Parser Op
+operator :: Parser String
 eExpr :: Parser Exp
 eExprSingle :: Parser Exp
 eLambda :: Parser Exp
@@ -61,11 +52,9 @@ eLet :: Parser Exp
 eRec :: Parser Exp
 eIf :: Parser Exp
 
-defOpMap :: OpMap
-applyOp :: Op -> Exp -> Exp -> Exp
-exprConversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
 orderRecClauses :: Position -> [(VarE, Maybe Type, Exp)] -> Exp -> Exp
 getVars :: Exp -> S.Set VarE
+
 
 -- type parsing
 tInt :: Parser Type
@@ -75,6 +64,12 @@ tVar :: Parser Type
 tTypeSingle :: Parser Type
 tType :: Parser Type
 tTypeAnnotation :: Parser (Maybe Type)
+
+--expr postproc
+defOpMap :: OpMap
+applyOp :: Op -> Exp -> Exp -> Exp
+exprConversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
+finishOps :: OpMap -> Exp -> Parser Exp
 
 -- toplevel parsing
 namedExp :: Parser TLD
@@ -123,14 +118,13 @@ operator = try $ do
   s <- lexeme $ many (oneOf "=-.:/\\~<>!@$%^&*+{}|?") -- reserved: [](),_"'`
   if s `elem` reserved
     then fail $ "forbidden keyword symbol: " ++ show s ++ " cannot be an operator"
-    else case M.lookup s defOpMap of
-      Just x  -> return x
-      Nothing -> fail $ "no such operator: " ++ show s
+    else return $ s
 
 eExpr = do
+  p <- getPos
   h <- eExprSingle
   t <- many (try $ (,) <$> operator <*> eExprSingle)
-  return $ exprConversion [h] [] t -- TODO: custom operators
+  return $ EOpExpr p h t
 
 eExprSingle =
       eBoolean
@@ -141,7 +135,6 @@ eExprSingle =
   <|> eRec
   <|> eIf
   <|> parens eExpr
-
 
 eBoolean = do
   p <- getPos
@@ -203,48 +196,6 @@ eIf = do
   return $ EApply p3 (EApply p2 (EApply p1 (EVar p0 $ builtinPrefix ++ "if") cond) e1) e2
 
 
-
-defOpMap = M.fromList [
-  ("$", Op 0 AssR "__special__lambda"),
-  ("||", Op 2 AssL $ builtinPrefix ++ "or"),
-  ("&&", Op 3 AssL $ builtinPrefix ++ "and"),
-  ("==", Op 4 AssL $ builtinPrefix ++ "eq"),
-  ("/=", Op 4 AssL $ builtinPrefix ++ "neq"),
-  ("<=", Op 4 AssL $ builtinPrefix ++ "le"),
-  (">=", Op 4 AssL $ builtinPrefix ++ "ge"),
-  ("<", Op 4 AssL $ builtinPrefix ++ "lt"),
-  (">", Op 4 AssL $ builtinPrefix ++ "gt"),
-  ("+", Op 6 AssL $ builtinPrefix ++ "add"),
-  ("-", Op 6 AssL $ builtinPrefix ++ "sub"),
-  ("*", Op 7 AssL $ builtinPrefix ++ "mul"),
-  ("/", Op 7 AssL $ builtinPrefix ++ "div"),
-  ("%", Op 7 AssL $ builtinPrefix ++ "mod"),
-  ("", Op 10 AssL "__special__lambda")]
-
-applyOp (Op _ _ "__special__lambda") e1 e2 = EApply (takePos e2) e1 e2
-
-applyOp (Op _ _ name) e1 e2 =
-    EApply (takePos e2)
-      (EApply (takePos e1) (EVar (takePos e1) name) e1)
-      e2
-
-
-exprConversion [e] [] [] = e
-
-exprConversion (h2:h1:t) (o:to) [] = exprConversion (applyOp o h1 h2:t) to []
-
-exprConversion output [] ((o,e):to) = exprConversion (e:output) [o] to
-
-exprConversion
-  output  @(h2:h1                 :t)
-  ops     @(ho@(Op pr1 _ _)       :to)
-  input   @((o@(Op pr2 as _), h3) :ti) =
-  if (as == AssL && pr2 <= pr1) || (as == AssR && pr2 < pr1)
-    then exprConversion (applyOp ho h1 h2:t) to input
-    else exprConversion (h3:output) (o:ops) ti
-
-exprConversion _ _ _ = undefined -- should never happen
-
 -- get all variables appearing in an expression that were not defined in it,
 -- for ordering rec clauses in orderRecClauses
 getVars ex = case ex of
@@ -256,6 +207,7 @@ getVars ex = case ex of
   ELetRec _ l e   ->
     (getVars e `S.union` (S.unions $ map (getVars . (\(_,_,a) -> a)) l)) S.\\ (S.fromList $ map (\(a,_,_) -> a) l)
   ELambda _ n e   -> getVars e S.\\ S.singleton n
+  EOpExpr _ e l   -> getVars e `S.union` S.unions (map (\(_,eu) -> getVars eu) l)
 
 orderRecClauses p l ex = let
   labels = map (\(a,_,_) -> a) l
@@ -297,6 +249,77 @@ tTypeAnnotation = optional $ do
   rop "::"
   tType
 
+-- expr postprocess
+defOpMap = M.fromList [
+  ("$", Op 0 AssR "__special__lambda"),
+  ("||", Op 2 AssL $ builtinPrefix ++ "or"),
+  ("&&", Op 3 AssL $ builtinPrefix ++ "and"),
+  ("==", Op 4 AssL $ builtinPrefix ++ "eq"),
+  ("/=", Op 4 AssL $ builtinPrefix ++ "neq"),
+  ("<=", Op 4 AssL $ builtinPrefix ++ "le"),
+  (">=", Op 4 AssL $ builtinPrefix ++ "ge"),
+  ("<", Op 4 AssL $ builtinPrefix ++ "lt"),
+  (">", Op 4 AssL $ builtinPrefix ++ "gt"),
+  ("+", Op 6 AssL $ builtinPrefix ++ "add"),
+  ("-", Op 6 AssL $ builtinPrefix ++ "sub"),
+  ("*", Op 7 AssL $ builtinPrefix ++ "mul"),
+  ("/", Op 7 AssL $ builtinPrefix ++ "div"),
+  ("%", Op 7 AssL $ builtinPrefix ++ "mod"),
+  ("", Op 10 AssL "__special__lambda")]
+
+applyOp (Op _ _ "__special__lambda") e1 e2 = EApply (takePos e2) e1 e2
+
+applyOp (Op _ _ name) e1 e2 =
+    EApply (takePos e2)
+      (EApply (takePos e1) (EVar (takePos e1) name) e1)
+      e2
+
+
+exprConversion [e] [] [] = e
+
+exprConversion (h2:h1:t) (o:to) [] = exprConversion (applyOp o h1 h2:t) to []
+
+exprConversion output [] ((o,e):to) = exprConversion (e:output) [o] to
+
+exprConversion
+  output  @(h2:h1                 :t)
+  ops     @(ho@(Op pr1 _ _)       :to)
+  input   @((o@(Op pr2 as _), h3) :ti) =
+  if (as == AssL && pr2 <= pr1) || (as == AssR && pr2 < pr1)
+    then exprConversion (applyOp ho h1 h2:t) to input
+    else exprConversion (h3:output) (o:ops) ti
+
+exprConversion _ _ _ = undefined -- should never happen
+
+finishOps om ex = let
+  mapLets = mapM (\(v, t, e) -> finishOps om e >>= \e' -> return (v, t, e'))
+  in case ex of
+    ELambda p v e   -> do
+      e' <- (finishOps om e)
+      return $ ELambda p v e'
+    ELet p l e      -> do
+      l' <- mapLets l
+      e' <- finishOps om e
+      return $ ELet p l' e'
+    ELetRec p l e   -> do
+      l' <- mapLets l
+      e' <- finishOps om e
+      return $ ELetRec p l' e'
+    EApply p e1 e2  -> do
+      e1' <- (finishOps om e1)
+      e2' <- (finishOps om e2)
+      return $ EApply p e1' e2'
+    EOpExpr _ h t   -> do
+      h' <- finishOps om h
+      t' <- mapM (\(oname, e) -> do
+        e' <- finishOps om e
+        case M.lookup oname om of
+          Nothing -> fail $ "No such operator: " ++ oname
+          Just op -> return (op, e')
+        ) t
+      return $ exprConversion [h'] [] t'
+    EData _ _       -> return ex
+    EVar _ _        -> return ex
 
 -- toplevel
 namedExp = do
@@ -305,7 +328,8 @@ namedExp = do
   ann <- tTypeAnnotation
   rop "="
   e <- eExpr
-  return $ NamedExp var ann e
+  e' <- finishOps defOpMap e
+  return $ NamedExp var ann e'
 
 toplevelDef =
       namedExp

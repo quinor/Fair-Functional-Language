@@ -6,6 +6,9 @@ module Interpreter.Defs (
   Data(..),
   Position(..),
   Exp(..),
+  Ass(..),
+  Op(..),
+  OpMap,
   TLD(..),
   Type(..),
   Primitive(..),
@@ -18,7 +21,7 @@ module Interpreter.Defs (
   printStacktrace
 ) where
 import qualified Data.Sequence as Sequence
-import qualified Data.Map as Map
+import qualified Data.Map as M
 import Control.Monad.State
 import Control.Monad.Except
 import qualified Text.PrettyPrint as PP
@@ -29,7 +32,7 @@ type VarT = String
 
 
 type Dataspace = Sequence.Seq Data
-type Namespace = Map.Map VarE Int
+type Namespace = M.Map VarE Int
 type Stacktrace = [Position]
 type Interpreter a = ExceptT (Stacktrace, String) (State Dataspace) a
 
@@ -54,9 +57,21 @@ data Exp =
   | EApply  Position Exp Exp                        -- (Var Var)
   | EData   Position Data                           -- just Data constant
   | EVar    Position VarE                           -- just Var
+  | EOpExpr Position Exp [(String, Exp)]            -- fake type for parsing (before ops are known)
 
 -- position getter for expressions
 takePos :: Exp -> Position
+
+
+-- associativity of operators
+data Ass = AssL | AssR deriving (Eq, Show)
+
+-- operator
+data Op = Op Int Ass VarE deriving Show -- precedence, associativity, function name
+
+-- operator map
+type OpMap = M.Map String Op
+
 
 -- toplevel definition in a program
 data TLD =
@@ -96,6 +111,7 @@ takePos (ELetRec p _ _) = p
 takePos (EApply  p _ _) = p
 takePos (EData   p _  ) = p
 takePos (EVar    p _  ) = p
+takePos (EOpExpr p _ _) = p
 
 takeName (Prim0 n _ _) = n
 takeName (Prim1 n _ _) = n
@@ -139,7 +155,7 @@ letBlock a = foldr1
     PP.text n
     PP.<+> case ann of
       Nothing -> PP.empty
-      Just a -> PP.text "::" PP.<+> prType a
+      Just an -> PP.text "::" PP.<+> prType an
     PP.<+> PP.text "="
     PP.<+> prExp e) a)
 
@@ -155,6 +171,7 @@ prExp (ELetRec _ l e) =
           PP.text "rec" PP.$$ letBlock l
   PP.$$  (PP.nest 0) (PP.text "in" PP.<+> prExp e)
 prExp (ELambda _ n e) = PP.text "\\" PP.<+> PP.text n PP.<+> PP.text "->" PP.<+> prExp e
+prExp (EOpExpr _ e l) = PP.text $ show e ++ " " ++ show (map snd l)
 
 prParenExp :: Exp -> PP.Doc
 prParenExp t = case t of
