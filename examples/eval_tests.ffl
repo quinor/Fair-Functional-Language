@@ -2,6 +2,8 @@
 This program tests eval on both positive and negative examples.
 #}
 
+def division_precedence = 10/5/2
+
 def zero_division = 10/0
 
 def no_zero_division = let

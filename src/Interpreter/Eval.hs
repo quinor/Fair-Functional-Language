@@ -78,20 +78,23 @@ exec ns st expr = case expr of
   ELetRec pos nameDefs ex             -> do
     next <- nextId
     let new_ns = foldr
-          (\((name, _), place) m -> M.insert name place m)
+          (\((name, _, _), place) m -> M.insert name place m)
           ns
           (zip nameDefs [next..])
-    mapM_ (\(_, e) -> addNext $ DLazy new_ns st e) nameDefs
+    mapM_ (\(_, _, e) -> addNext $ DLazy new_ns st e) nameDefs
     exec new_ns (pos:st) ex
   ELet pos nameDefs ex                -> do
     next <- nextId
     let new_ns = foldr
-          (\((name, _), place) m -> M.insert name place m)
+          (\((name, _, _), place) m -> M.insert name place m)
           ns
           (zip nameDefs [next..])
-    mapM_ (\(_, e) -> addNext $ DLazy ns st e) nameDefs
+    mapM_ (\(_, _, e) -> addNext $ DLazy ns st e) nameDefs
     exec new_ns (pos:st) ex
   ELambda _ var def                   -> do
     return $ DLambda ns var def
 
-evalProgram prog = fst $ runState (runExceptT $ exec M.empty [] prog >>= computeData []) Sequence.empty
+evalProgram prog = fst $ runState
+  (runExceptT $
+    exec M.empty [] prog >>= computeData [(Position "<toplevel>" 0 0)])
+  Sequence.empty

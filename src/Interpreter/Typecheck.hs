@@ -55,7 +55,13 @@ generalize :: TypeEnv -> Type -> TypeScheme
 --substitute all forall vars with fresh ones
 instantiate :: TypeScheme -> TypeChecker Type
 
---
+--replace uservar in type with regular var
+removeUser :: Type -> Type
+
+--apply type annotation and return type scheme
+resolveAnnotation :: TypeEnv -> Position -> Maybe Type -> Type -> TypeChecker TypeScheme
+
+--debug. ugly.
 debugMessage :: String -> TypeChecker ()
 debugMessage = if False then traceM else \_ -> return ()
 
@@ -67,11 +73,13 @@ instance Types Type where
     TBool         -> S.empty
     TLambda t1 t2 -> freeVars t1 `S.union` freeVars t2
     TVar v        -> S.singleton v
+    TUserVar _    -> S.empty
   applySub sub t = case t of
     TInt          -> TInt
     TBool         -> TBool
     TLambda t1 t2 -> TLambda (applySub sub t1) (applySub sub t2)
     TVar v        -> fromMaybe (TVar v) $ M.lookup v sub
+    TUserVar _    -> t
 
 
 instance Types TypeScheme where
@@ -108,6 +116,8 @@ unify p t1 t2 = case (t1, t2) of
       else return $ M.singleton a x
   -- must be later becouse overlaps with previous one
   (t, TVar a)                 -> unify p (TVar a) t
+  (TUserVar a, TUserVar b)
+    | a == b                  -> return nullSub
   (_, _)                      -> throwError
     (p, "expressions don't unify! " ++ show t1 ++ " and " ++ show t2) -- unification error
 
@@ -128,8 +138,19 @@ instantiate (Scheme vars t) = do
   return $ applySub s t
 
 
---inferType implementation
+removeUser t = case t of
+  TUserVar x    -> TVar x
+  TLambda t1 t2 -> TLambda (removeUser t1) (removeUser t2)
+  x             -> x
 
+
+resolveAnnotation env pos ann t = case ann of
+  Just a -> do
+    void $ unify pos t a
+    return $ generalize (TypeEnv M.empty) (removeUser a)
+  Nothing -> return $ generalize env t
+
+-- inferType implementation
 inferType env@(TypeEnv envDict) expr = case expr of
   EVar pos var                          -> case M.lookup var envDict of
     Nothing -> throwError (pos, "no such variable: " ++ var)
@@ -155,7 +176,7 @@ inferType env@(TypeEnv envDict) expr = case expr of
   ELetRec pos nameDefs ex              -> do
     --insert type variables
     new <- foldM
-      (\ (TypeEnv oEDict) (n, _) -> do
+      (\ (TypeEnv oEDict) (n, _, _) -> do
         tv <- newVar "va_letrec_"
         return $ TypeEnv $ M.insert n (Scheme [] tv) oEDict
       )
@@ -163,7 +184,7 @@ inferType env@(TypeEnv envDict) expr = case expr of
       nameDefs
     --infer type of clauses
     (sub, new') <- foldM
-      (\ (oldSub, oldEnv) (n, e) -> do
+      (\ (oldSub, oldEnv) (n, _, e) -> do
         (s, t) <- inferType oldEnv e
         let newEnv@(TypeEnv dict) = applySub s oldEnv
         tv <- (instantiate $ fromJust $ M.lookup n dict)
@@ -175,23 +196,24 @@ inferType env@(TypeEnv envDict) expr = case expr of
     --generalize types
     let env' = applySub sub env
     new'' <- foldM
-      (\ (TypeEnv dict) (n, _) -> do
+      (\ (TypeEnv dict) (n, ann, _) -> do
         tv <- (instantiate $ fromJust $ M.lookup n dict)
-        debugMessage $ "type of " ++ n ++ ": " ++ show (generalize env' tv)
-        return $ TypeEnv $ M.insert n (generalize env' tv) dict
+        gen_t <- resolveAnnotation env' pos ann tv
+        debugMessage $ "type of " ++ n ++ ": " ++ show gen_t
+        return $ TypeEnv $ M.insert n gen_t dict
       )
       new'
       nameDefs
     (sx, tx) <- inferType new'' ex
     return (sx `compose` sub, tx)
-  ELet _ nameDefs ex                 -> do
+  ELet pos nameDefs ex               -> do
     (sub, _, new) <- foldM
-      (\ (oldSub, oldLightEnv, TypeEnv oREDict) (n, e) -> do
+      (\ (oldSub, oldLightEnv, TypeEnv oREDict) (n, ann, e) -> do
         (s, t) <- inferType oldLightEnv e
         let lightEnv = applySub s oldLightEnv
-        debugMessage $ "type of " ++ n ++ ": " ++ show (generalize lightEnv t)
-        let richEnv = TypeEnv $ M.insert n (generalize lightEnv t) oREDict
-        return (s `compose` oldSub, lightEnv, richEnv)
+        gen_t <- resolveAnnotation lightEnv pos ann t
+        debugMessage $ "type of " ++ n ++ ": " ++ show gen_t
+        return (s `compose` oldSub, lightEnv, TypeEnv $ M.insert n gen_t oREDict)
       )
       (nullSub, env, env)
       nameDefs

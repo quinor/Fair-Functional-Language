@@ -123,4 +123,4 @@ builtins = (map (\p -> (p, builtinPrefix ++ takeName p))
 
 prelude :: Exp -> Exp
 prelude = ELet (Position "prelude" 0 0)
-  (map (\(pr, n) -> (n, EData (Position "prelude" 0 0) $ DPrimitive pr)) builtins)
+  (map (\(pr, n) -> (n, Nothing, EData (Position "prelude" 0 0) $ DPrimitive pr)) builtins)

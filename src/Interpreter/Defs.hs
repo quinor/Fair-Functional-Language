@@ -33,8 +33,6 @@ type Namespace = Map.Map VarE Int
 type Stacktrace = [Position]
 type Interpreter a = ExceptT (Stacktrace, String) (State Dataspace) a
 
-
-
 -- data type in the language
 data Data =
       DRef Int
@@ -50,33 +48,28 @@ data Position = Position String Int Int
 
 -- basically AST
 data Exp =
-    ELambda Position VarE Exp          -- (\Var -> Exp)
-  | ELet    Position [(VarE, Exp)] Exp    -- let [Var = Exp] in Exp, Vars visible only in second exp
-  | ELetRec Position [(VarE, Exp)] Exp -- letrec [Var = Exp] in Exp, Vars visible in both exps
-  | EApply  Position Exp Exp            -- (Var Var)
-  | EData   Position Data                -- just Data constant
-  | EVar    Position VarE                 -- just Var
+    ELambda Position VarE Exp                       -- (\Var -> Exp)
+  | ELet    Position [(VarE, Maybe Type, Exp)] Exp  -- let [Var = Exp] in Exp, Vars visible only in second exp
+  | ELetRec Position [(VarE, Maybe Type, Exp)] Exp  -- letrec [Var = Exp] in Exp, Vars visible in both exps
+  | EApply  Position Exp Exp                        -- (Var Var)
+  | EData   Position Data                           -- just Data constant
+  | EVar    Position VarE                           -- just Var
 
+-- position getter for expressions
 takePos :: Exp -> Position
-takePos (ELambda p _ _) = p
-takePos (ELet    p _ _) = p
-takePos (ELetRec p _ _) = p
-takePos (EApply  p _ _) = p
-takePos (EData   p _  ) = p
-takePos (EVar    p _  ) = p
-
 
 -- toplevel definition in a program
 data TLD =
-    NamedExp VarE Exp
+    NamedExp VarE (Maybe Type) Exp
   deriving Show
 
 -- type of an expression
 data Type =
     TInt
   | TBool
-  | TLambda Type Type    -- lambda == primitive as for the type
+  | TLambda Type Type
   | TVar VarT
+  | TUserVar VarT
 
 
 -- primitive function with type, string is primitive name (for docs/error purposes)
@@ -87,17 +80,33 @@ data Primitive =
   | Prim2 String Type (Data -> Data -> Stacktrace -> Interpreter Data)
   | Prim3 String Type (Data -> Data -> Data -> Stacktrace -> Interpreter Data)
 
+-- name getter for primitives
 takeName :: Primitive -> String
+
+-- "show" for stacktrace
+printStacktrace :: Stacktrace -> String
+
+
+
+-- ============================= HELPER FUNCTIONS =============================
+
+takePos (ELambda p _ _) = p
+takePos (ELet    p _ _) = p
+takePos (ELetRec p _ _) = p
+takePos (EApply  p _ _) = p
+takePos (EData   p _  ) = p
+takePos (EVar    p _  ) = p
+
 takeName (Prim0 n _ _) = n
 takeName (Prim1 n _ _) = n
 takeName (Prim2 n _ _) = n
 takeName (Prim3 n _ _) = n
 
-printStacktrace :: Stacktrace -> String
 printStacktrace l = foldr1 (++) (map (\e -> show e ++ "\n") l)
 
+-- ========================= CONVENIENCE SHOW CLASSES =========================
 
--- ====================== CONVENIENCE SHOW CLASSES ============================
+
 
 ppShow :: Show a => a -> PP.Doc
 ppShow = PP.text . show
@@ -123,10 +132,16 @@ instance Show Position where
 instance Show Exp where
   showsPrec _ x = shows $ prExp x
 
-letBlock :: [(VarE, Exp)] -> PP.Doc
+letBlock :: [(VarE, Maybe Type, Exp)] -> PP.Doc
 letBlock a = foldr1
   (\t1 t2 -> (t1 PP.<+> PP.text "and") PP.$$ t2)
-  (map ((PP.nest 2) . \(n, e) -> PP.text n PP.<+> PP.text "=" PP.<+> prExp e) a)
+  (map ((PP.nest 2) . \(n, ann, e) ->
+    PP.text n
+    PP.<+> case ann of
+      Nothing -> PP.empty
+      Just a -> PP.text "::" PP.<+> prType a
+    PP.<+> PP.text "="
+    PP.<+> prExp e) a)
 
 
 prExp :: Exp -> PP.Doc
@@ -159,6 +174,7 @@ prType TInt           = PP.text "Int"
 prType TBool          = PP.text "Bool"
 prType (TLambda a b)  = prParenType a PP.<+> PP.text "->" PP.<+> prType b
 prType (TVar n)       = PP.text n
+prType (TUserVar n)   = PP.text $ "<" ++ n ++ ">"
 
 prParenType :: Type -> PP.Doc
 prParenType t = case t of

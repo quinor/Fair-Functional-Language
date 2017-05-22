@@ -18,7 +18,7 @@ runProgram fn f = do
   case prog of
     Left err    -> putStrLn $ parseErrorPretty err
     Right tlds  -> mapM_ (
-      \(NamedExp n e) -> do
+      \(NamedExp n _ e) -> do
         let
           e' = prelude e
         putStrLn $ "processing entry " ++ show n ++ ":"
