@@ -6,7 +6,7 @@ module Interpreter.Parser (
 ) where
 import Interpreter.Defs
 import Interpreter.Primitives (builtinPrefix)
-import Control.Monad (void)
+import Control.Monad
 import Text.Megaparsec
 import Text.Megaparsec.String
 import qualified Text.Megaparsec.Lexer as L
@@ -15,14 +15,14 @@ import qualified Data.Graph as G
 import qualified Data.Set as S
 
 
-type ParseResult = Either (ParseError (Token String) Dec) [TLD]
+type ParseResult = Either (ParseError (Token String) Dec) Program
 
 --parse program from string
 parseStr :: String -> String -> ParseResult
 parseStr = parse langParser
 
 --parser of the entire language
-langParser :: Parser [TLD]
+langParser :: Parser Program
 
 
 -- parser utility functions and definitions
@@ -47,6 +47,7 @@ operator :: Parser String
 eExpr :: Parser Exp
 eExprSingle :: Parser Exp
 eLambda :: Parser Exp
+unique :: [VarE] -> Parser ()
 letDecls :: Parser [(VarE, Maybe Type, Exp)]
 eLet :: Parser Exp
 eRec :: Parser Exp
@@ -72,6 +73,7 @@ exprConversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
 finishOps :: OpMap -> Exp -> Parser Exp
 
 -- toplevel parsing
+newOperator :: Parser TLD
 namedExp :: Parser TLD
 toplevelDef :: Parser TLD
 
@@ -79,7 +81,7 @@ toplevelDef :: Parser TLD
 
 -- utility/defs
 reserved = ["def", "data", "type", "True", "False", "let", "rec", "and", "match", "with", "in", "if",
-  "then", "else", "\\", "->", "<-", "=", "Integer", "Boolean"]
+  "then", "else", "\\", "->", "<-", "=", "Integer", "Boolean", "newop", "of"]
 
 getPos = do
   p <- getPosition
@@ -159,12 +161,24 @@ eLambda = do
   e <- eExpr
   return $ foldr (ELambda p) e vars
 
-letDecls = (\x -> sepBy1 x (rword "and")) $ do
-  v <- lIdentifier
-  ann <- tTypeAnnotation
-  rop "="
-  e <- eExpr
-  return (v, ann, e)
+unique l = foldM_ (\s n ->
+    if n `S.member` s
+      then fail $ "variable " ++ n ++ " appears more than once in the declaration!"
+      else return $ n `S.insert` s
+  )
+  S.empty
+  l
+
+letDecls = do
+  result <- (\x -> sepBy1 x (rword "and")) $ do
+    v <- lIdentifier
+    ann <- tTypeAnnotation
+    rop "="
+    e <- eExpr
+    return (v, ann, e)
+  unique $ map (\(a, _, _) -> a) result
+  return result
+
 
 eLet = do
   p <- getPos
@@ -322,16 +336,39 @@ finishOps om ex = let
     EVar _ _        -> return ex
 
 -- toplevel
+newOperator = do
+  rword "newop"
+  sign <- operator
+  rword "of"
+  ass <- (AssL <$ rword "Left") <|> (AssR <$ rword "Right")
+  prec <- fromInteger <$> lexeme L.integer
+  name <- lIdentifier
+  return $ Operator sign $ Op prec ass name
+
+
 namedExp = do
   rword "def"
   var <- lIdentifier
   ann <- tTypeAnnotation
   rop "="
   e <- eExpr
-  e' <- finishOps defOpMap e
-  return $ NamedExp var ann e'
+  return $ NamedExp var ann e
 
 toplevelDef =
       namedExp
+  <|> newOperator
 
-langParser = between sc eof (some toplevelDef)
+langParser = do
+  p0 <- getPos
+  tlds <- between sc eof (some toplevelDef)
+  p1 <- getPos
+  --operators
+  let opMap = M.union (M.fromList [(s,op) | (Operator s op) <- tlds]) defOpMap
+  --definitions
+  defs <- mapM
+    (\(n, ann, e) -> do
+      e' <- finishOps opMap e
+      return (n, ann, e'))
+    [(n,ann,e) | (NamedExp n ann e) <- tlds]
+  unique $ map (\(a,_,_) -> a) defs
+  return $ Program $ orderRecClauses p0 defs (EVar p1 "main")

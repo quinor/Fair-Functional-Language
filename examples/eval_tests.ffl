@@ -18,3 +18,4 @@ def no_infinite_loop = rec
   a = a+1
   in 42
 
+def main = division_precedence + no_zero_division + no_infinite_loop

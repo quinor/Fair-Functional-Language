@@ -10,6 +10,7 @@ module Interpreter.Defs (
   Op(..),
   OpMap,
   TLD(..),
+  Program(..),
   Type(..),
   Primitive(..),
   Dataspace,
@@ -75,8 +76,12 @@ type OpMap = M.Map String Op
 
 -- toplevel definition in a program
 data TLD =
-    NamedExp VarE (Maybe Type) Exp
+    Operator String Op
+  | NamedExp VarE (Maybe Type) Exp
   deriving Show
+
+-- program structure
+data Program = Program Exp deriving Show
 
 -- type of an expression
 data Type =
@@ -146,7 +151,7 @@ instance Show Position where
 
 
 instance Show Exp where
-  showsPrec _ x = shows $ prExp x
+  showsPrec _ x = shows $ PP.nest (3) $ prExp x
 
 letBlock :: [(VarE, Maybe Type, Exp)] -> PP.Doc
 letBlock a = foldr1
@@ -165,11 +170,11 @@ prExp (EVar _ n) = PP.text n
 prExp (EData _ d) = prData d
 prExp (EApply _ e1 e2) = prExp e1 PP.<+> prParenExp e2
 prExp (ELet _ l e) =
-          PP.text "let" PP.$$ letBlock l
-  PP.$$  (PP.nest 0) (PP.text "in" PP.<+> prExp e)
+  PP.text "let" PP.$$ letBlock l
+  PP.$$ PP.nest (-3) (PP.text "in" PP.<+> prExp e)
 prExp (ELetRec _ l e) =
-          PP.text "rec" PP.$$ letBlock l
-  PP.$$  (PP.nest 0) (PP.text "in" PP.<+> prExp e)
+  PP.text "rec" PP.$$ letBlock l
+  PP.$$ PP.nest (-3) (PP.text "in" PP.<+> prExp e)
 prExp (ELambda _ n e) = PP.text "\\" PP.<+> PP.text n PP.<+> PP.text "->" PP.<+> prExp e
 prExp (EOpExpr _ e l) = PP.text $ show e ++ " " ++ show (map snd l)
 
