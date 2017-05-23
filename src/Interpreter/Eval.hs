@@ -97,5 +97,5 @@ exec ns st expr = case expr of
 
 evalProgram prog = fst $ runState
   (runExceptT $
-    exec M.empty [] prog >>= computeData [(Position "<toplevel>" 0 0)])
+    exec M.empty [(Position "<main>" 0 0)] prog >>= computeData [(Position "<main>" 0 0)])
   Sequence.empty

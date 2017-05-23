@@ -19,7 +19,7 @@ runProgram fn f = do
     Left err    -> putStrLn $ parseErrorPretty err
     Right (Program e) -> do
       let e' = prelude e
-      putStrLn $ "code: \n" ++ show e
+      --putStrLn $ "code: \n" ++ show e
       case checkType e' of
         Left (pos, err)  -> do
           putStrLn "Typecheck failure:"

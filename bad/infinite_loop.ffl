@@ -1,0 +1,5 @@
+def infinite_loop = rec
+  a = a+1
+  in a
+
+def main = infinite_loop

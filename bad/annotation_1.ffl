@@ -1,0 +1,5 @@
+def annotations_err = let
+  int_id :: Int -> Int = \a -> a
+  in int_id True
+
+def main = 42

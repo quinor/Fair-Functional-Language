@@ -1,0 +1,5 @@
+def annotations_err_2 = let
+  sum :: a -> a = \x -> x+5
+  in sum 2
+
+def main = 42

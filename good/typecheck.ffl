@@ -1,14 +1,10 @@
 {#
-This program tests typecheck on both positive and negative examples.
+This program tests typecheck on positive examples.
 #}
 
 def integer = 5
 
 def boolean = True
-
-def sum_error = True + 5
-
-def or_error = 5 || 3
 
 def if_poly = let
   ip = \ a -> if True then a else a
@@ -24,14 +20,6 @@ def rec_inference_2 = rec
   and num = id 5
   in id True
 
-def annotations_err = let
-  int_id :: Int -> Int = \a -> a
-  in int_id True
-
-def annotations_err_2 = let
-  sum :: a -> a = \x -> x+5
-  in sum 2
-
 def annotations = let
   int_id :: Int -> Int = \a -> a
   in int_id 5
@@ -39,3 +27,6 @@ def annotations = let
 def annotations_2 = let
   id :: a -> a = \a -> a
   in if id True then id 5 else 7
+
+# just so that program doesn's scream there's no main
+def main = True

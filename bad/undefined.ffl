@@ -1,0 +1,3 @@
+def undef = undefined
+
+def main = undef

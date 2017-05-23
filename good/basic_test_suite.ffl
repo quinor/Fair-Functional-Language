@@ -1,26 +1,27 @@
-{#
-This is super basic program testing base language properties.
-Can be thought of as smoke test.
-#}
+
 
 
 # super basic test, "hello world" style
+# =3
 def sum = 1 + 2
 
 # test of operator application order (if "10/2" isn't actually 2/10)
-def order = 10/2
+# =5
+def order = 10 / 2
 
 # test of let expression
+# =42
 def let_t = let
-  num = 42
-  in num
+  num = 42 in num
 
 # lambda expression
+# =13
 def lambda = let
   add_one = \n -> n+1
   in add_one 12
 
 # if expression
+# =42
 def if_t = let
   if_t = \b -> if b
     then 42
@@ -28,6 +29,7 @@ def if_t = let
   in if_t True
 
 # recursion
+# =120
 def fact = rec
   factorial = \n -> if n == 0
     then 1
@@ -35,12 +37,32 @@ def fact = rec
   in factorial 5
 
 # polymorphism
+# =1
 def poly = let
   id = \x -> x
   in if (id True) then (id 1) else 0
 
+# =15
 # multi let
 def multilet =
   let a = 5
   and b = 10
   in a+b
+
+def guard_op = \a b -> if b then a else 0
+
+newop @ of Left 5 guard_op
+
+def op = (100 @ True) + (1 @ False)
+
+# should eval to True
+def main =
+      sum == 3
+  &&  order == 5
+  &&  let_t == 42
+  &&  lambda == 13
+  &&  if_t == 42
+  &&  fact == 120
+  &&  poly == 1
+  &&  multilet == 15
+  &&  op == 100
