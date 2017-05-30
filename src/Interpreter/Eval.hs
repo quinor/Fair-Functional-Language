@@ -24,16 +24,6 @@ computeData :: Stacktrace -> Data -> Interpreter Data
 -- run expression and retrieve the result
 evalProgram :: Exp -> Either (Stacktrace, String) Data
 
--- primitive applivation function
-applyPrimitive :: Stacktrace -> Primitive -> Data -> Interpreter Data
-
-applyPrimitive _ (Prim0 _ _ _) _                    = undefined --should never happen!
-applyPrimitive _ (Prim1 name (TLambda _ b) fn) ex  = return $ DPrimitive $ Prim0 name b $ fn ex
-applyPrimitive _ (Prim2 name (TLambda _ b) fn) ex   = return $ DPrimitive $ Prim1 name b $ fn ex
-applyPrimitive _ (Prim3 name (TLambda _ b) fn) ex   = return $ DPrimitive $ Prim2 name b $ fn ex
-applyPrimitive _ _ _                                = undefined
-
-
 -- exec helper functions for state monad
 
 nextId :: MonadState (Sequence.Seq a) m => m Int
@@ -43,45 +33,53 @@ addNext :: MonadState (Sequence.Seq a) m => a -> m ()
 addNext dt = state (\st -> ((), st Sequence.|> dt))
 
 
--- computeData implementation
+-- computedata implementation
 computeData st (DRef pos) = do
-  state (\sta -> (sta `Sequence.index` pos, sta)) >>= \case
-    DLazy ns st' ex  -> do
-      state (\sta -> ((), Sequence.update pos DUndefined sta))
-      dt_val <- exec ns st' ex >>= computeData st'
-      state (\sta -> ((), Sequence.update pos dt_val sta))
-      return dt_val
-    -- only happens between lines 47..48
-    DUndefined      -> throwError (st, "unsolvable infinite recursion!")
-    x               -> computeData st x
+  value <- state (\sta -> (sta `Sequence.index` pos, sta))
+  state (\sta -> ((), Sequence.update pos DUndefined sta))
+  reduced <- computeData st value
+  state (\sta -> ((), Sequence.update pos reduced sta))
+  return reduced
 
-computeData st (DPrimitive (Prim0 _ _ d)) = (d st) >>= computeData st
-computeData _ (DLazy _ _ _) = undefined --should never ever happen!
+computeData st (DPrimitive (Prim _ _ 0 d)) = (d [] st) >>= computeData st
+
+--only happens below
+computeData st (DUndefined) = throwError (st, "unsolvable infinite recursion!")
+
+computeData st (DLazyEval ns st' ex) = exec ns st' ex >>= computeData st
+
+computeData st (DLazyApply st' funL valL) = do
+  fun <- computeData st' funL
+  computeData st =<< case fun of
+    DPrimitive (Prim _ _ 0 _)                   -> undefined -- should never happen, safeguard
+    DPrimitive (Prim name (TLambda _ b) num fn) ->
+      return $ DPrimitive $ Prim name b (num-1) (\l -> fn (valL:l))
+    DLambda ns var def                          -> do
+      next <- nextId
+      addNext valL
+      exec (M.insert var next ns) st' def
+    _                                           -> undefined -- nothing more can be applied
+
 computeData _ a = return a
-
 
 -- exec implementation
 exec ns st expr = case expr of
   EVar _ var                          -> do
     return $ DRef $ fromJust $ M.lookup var ns
   EData _ dt                          -> return dt
-  EApply pos fun val                  -> do
-    funLazy <- exec ns (pos:st) fun
-    funVal <- computeData st funLazy
+  EApply pos funE valE                -> do
+    fun <- exec ns (pos:st) funE
+    val <- exec ns (pos:st) valE
     next <- nextId
-    addNext (DLazy ns st val)
-    case funVal of
-      DLambda f_ns var def  -> do
-        exec (M.insert var next f_ns) (pos:st) def
-      DPrimitive prim       -> applyPrimitive st prim (DRef next)
-      _                     -> undefined -- you can apply nothig else
+    addNext (DLazyApply (pos:st) fun val)
+    return $ DRef next
   ELetRec pos nameDefs ex             -> do
     next <- nextId
     let new_ns = foldr
           (\((name, _, _), place) m -> M.insert name place m)
           ns
           (zip nameDefs [next..])
-    mapM_ (\(_, _, e) -> addNext $ DLazy new_ns st e) nameDefs
+    mapM_ (\(_, _, e) -> addNext $ DLazyEval new_ns st e) nameDefs
     exec new_ns (pos:st) ex
   ELet pos nameDefs ex                -> do
     next <- nextId
@@ -89,7 +87,7 @@ exec ns st expr = case expr of
           (\((name, _, _), place) m -> M.insert name place m)
           ns
           (zip nameDefs [next..])
-    mapM_ (\(_, _, e) -> addNext $ DLazy ns st e) nameDefs
+    mapM_ (\(_, _, e) -> addNext $ DLazyEval ns st e) nameDefs
     exec new_ns (pos:st) ex
   ELambda _ var def                   -> do
     return $ DLambda ns var def

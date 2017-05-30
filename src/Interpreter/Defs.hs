@@ -40,12 +40,15 @@ type Interpreter a = ExceptT (Stacktrace, String) (State Dataspace) a
 -- data type in the language
 data Data =
       DRef Int
-    | DUndefined
-    | DLazy Namespace Stacktrace Exp
     | DLambda Namespace VarE Exp
     | DPrimitive Primitive
     | DInt Int
     | DBool Bool
+    | DAlgebraic String [Data]
+    --those below live only under refs
+    | DUndefined
+    | DLazyEval Namespace Stacktrace Exp
+    | DLazyApply Stacktrace Data Data
 
 -- position in the source file: filename, line, column
 data Position = Position String Int Int
@@ -77,6 +80,7 @@ type OpMap = M.Map String Op
 -- toplevel definition in a program
 data TLD =
     Operator String Op
+  | AlgType String [VarT] [(String, [Type])]
   | NamedExp VarE (Maybe Type) Exp
   deriving Show
 
@@ -88,17 +92,15 @@ data Type =
     TInt
   | TBool
   | TLambda Type Type
+  | TAlgebraic String [VarT]
   | TVar VarT
   | TUserVar VarT
 
 
 -- primitive function with type, string is primitive name (for docs/error purposes)
--- stacktrace argument is for failing when primitive fails (currently div by 0 only)
+-- stacktrace argument is for failing when primitive fails
 data Primitive =
-    Prim0 String Type (Stacktrace -> Interpreter Data)
-  | Prim1 String Type (Data -> Stacktrace -> Interpreter Data)
-  | Prim2 String Type (Data -> Data -> Stacktrace -> Interpreter Data)
-  | Prim3 String Type (Data -> Data -> Data -> Stacktrace -> Interpreter Data)
+    Prim String Type Int ([Data] -> Stacktrace -> Interpreter Data)
 
 -- name getter for primitives
 takeName :: Primitive -> String
@@ -118,10 +120,7 @@ takePos (EData   p _  ) = p
 takePos (EVar    p _  ) = p
 takePos (EOpExpr p _ _) = p
 
-takeName (Prim0 n _ _) = n
-takeName (Prim1 n _ _) = n
-takeName (Prim2 n _ _) = n
-takeName (Prim3 n _ _) = n
+takeName (Prim n _ _ _) = n
 
 printStacktrace l = foldr1 (++) (map (\e -> show e ++ "\n") l)
 
@@ -143,7 +142,9 @@ prData (DInt x) = ppShow x
 prData (DBool b) = ppShow b
 prData (DPrimitive p) = ppShow p
 prData (DLambda _ _ _) = PP.text "Lambda function"
-prData (DLazy _ _ _) = undefined -- non-printable
+prData (DAlgebraic n l) = PP.parens $ PP.text n PP.<+> PP.hsep (map prData l)
+prData (DLazyEval _ _ _) = undefined -- non-printable
+prData (DLazyApply _ _ _) = undefined -- non-printable
 
 
 instance Show Position where
@@ -192,16 +193,18 @@ instance Show Type where
   showsPrec _ x = shows $ prType x
 
 prType :: Type -> PP.Doc
-prType TInt           = PP.text "Int"
-prType TBool          = PP.text "Bool"
-prType (TLambda a b)  = prParenType a PP.<+> PP.text "->" PP.<+> prType b
-prType (TVar n)       = PP.text n
-prType (TUserVar n)   = PP.text $ "<" ++ n ++ ">"
+prType TInt               = PP.text "Int"
+prType TBool              = PP.text "Bool"
+prType (TLambda a b)      = prParenType a PP.<+> PP.text "->" PP.<+> prType b
+prType (TAlgebraic n vs)  = PP.text n PP.<+> PP.hsep (map PP.text vs)
+prType (TVar n)           = PP.text n
+prType (TUserVar n)       = PP.text $ "<" ++ n ++ ">"
 
 prParenType :: Type -> PP.Doc
 prParenType t = case t of
-  TLambda _ _ -> PP.parens $ prType t
-  _           -> prType t
+  TLambda _ _     -> PP.parens $ prType t
+  TAlgebraic _ _  -> PP.parens $ prType t
+  _               -> prType t
 
 
 
@@ -209,7 +212,6 @@ instance Show Primitive where
   showsPrec _ x = shows $ prPrim x
 
 prPrim :: Primitive -> PP.Doc
-prPrim (Prim0 n t _) = PP.text "Prim0" PP.<+> PP.text n PP.<+> PP.parens (prType t)
-prPrim (Prim1 n t _) = PP.text "Prim1" PP.<+> PP.text n PP.<+> PP.parens (prType t)
-prPrim (Prim2 n t _) = PP.text "Prim2" PP.<+> PP.text n PP.<+> PP.parens (prType t)
-prPrim (Prim3 n t _) = PP.text "Prim3" PP.<+> PP.text n PP.<+> PP.parens (prType t)
+prPrim (Prim name t num _) =
+  PP.text "Prim" PP.<> (ppShow num) PP.<+> PP.text name
+  PP.<+> PP.parens (prType t) PP.<+> PP.text ""

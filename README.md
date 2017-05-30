@@ -1,4 +1,4 @@
-You can build using Stack or by "make all". Caution: the latter will download stack and use it to
+You can build using Stack or by `make all`. Caution: the latter will download stack and use it to
 set up the program and then copy binary to local directory.
 
 Basic instruction of running the language interpreter:

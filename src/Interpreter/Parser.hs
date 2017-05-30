@@ -66,14 +66,19 @@ tTypeSingle :: Parser Type
 tType :: Parser Type
 tTypeAnnotation :: Parser (Maybe Type)
 
---expr postproc
+-- expr postproc
 defOpMap :: OpMap
 applyOp :: Op -> Exp -> Exp -> Exp
 exprConversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
 finishOps :: OpMap -> Exp -> Parser Exp
 
+
+-- algtype parsing
+singleConstructor :: Parser (String, [Type])
+
 -- toplevel parsing
 newOperator :: Parser TLD
+newAlgType :: Parser TLD
 namedExp :: Parser TLD
 toplevelDef :: Parser TLD
 
@@ -150,7 +155,7 @@ eInteger = do
 
 eVariable = do
   p <- getPos
-  ident <- lIdentifier
+  ident <- lIdentifier <|> uIdentifier
   return $ EVar p ident
 
 eLambda = do
@@ -335,6 +340,14 @@ finishOps om ex = let
     EData _ _       -> return ex
     EVar _ _        -> return ex
 
+
+-- algtype
+singleConstructor = do
+  name <- uIdentifier
+  paramTypes <- many tType
+  return (name, paramTypes)
+
+
 -- toplevel
 newOperator = do
   rword "newop"
@@ -345,6 +358,13 @@ newOperator = do
   name <- lIdentifier
   return $ Operator sign $ Op prec ass name
 
+newAlgType = do
+  rword "data"
+  name <- uIdentifier
+  params <- many lIdentifier
+  rop "="
+  cstrs <- sepBy1 singleConstructor (rop "|")
+  return $ AlgType name params cstrs
 
 namedExp = do
   rword "def"
@@ -357,13 +377,19 @@ namedExp = do
 toplevelDef =
       namedExp
   <|> newOperator
+--  <|> newAlgType
 
 langParser = do
   p0 <- getPos
   tlds <- between sc eof (some toplevelDef)
   p1 <- getPos
+
   --operators
   let opMap = M.union (M.fromList [(s,op) | (Operator s op) <- tlds]) defOpMap
+
+  --algtypes
+  --[(name, vars, vstrs) | (AlgType name vars cstrs) <- tlds]
+
   --definitions
   defs <- mapM
     (\(n, ann, e) -> do

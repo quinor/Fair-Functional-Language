@@ -158,14 +158,10 @@ inferType env@(TypeEnv envDict) expr = case expr of
       t <- instantiate ts
       return (nullSub, t)
   EData _ dt                          -> case dt of
-    DPrimitive pr -> case pr of
-      Prim0 _ t _ -> return (nullSub, t)
-      Prim1 _ t _ -> return (nullSub, t)
-      Prim2 _ t _ -> return (nullSub, t)
-      Prim3 _ t _ -> return (nullSub, t)
-    DInt _        -> return (nullSub, TInt)
-    DBool _       -> return (nullSub, TBool)
-    _             -> undefined -- no literals of other types possible
+    DPrimitive (Prim _ t _ _) -> return (nullSub, t)
+    DInt _                    -> return (nullSub, TInt)
+    DBool _                   -> return (nullSub, TBool)
+    _                         -> undefined -- no literals of other types possible
   EApply pos fun val                    -> do
     tv <- newVar "va_app_"
     (s1, t1) <- inferType env fun

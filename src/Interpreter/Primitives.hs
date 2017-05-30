@@ -21,12 +21,12 @@ builtinPrefix = "_bltn_"
 
 -- primitive-related functions
 
-wrap_2i_i n f = Prim2 n (TLambda TInt $ TLambda TInt TInt) $ \d1 d2 st -> do
+wrap_2i_i n f = Prim n (TLambda TInt $ TLambda TInt TInt) 2 $ \[d1,d2] st -> do
   DInt d1' <- computeData st d1
   DInt d2' <- computeData st d2
   return $ DInt $ f d1' d2'
 
-wrap_2i_b n f = Prim2 n (TLambda TInt $ TLambda TInt TBool) $ \d1 d2 st -> do
+wrap_2i_b n f = Prim n (TLambda TInt $ TLambda TInt TBool) 2 $ \[d1,d2] st -> do
   DInt d1' <- computeData st d1
   DInt d2' <- computeData st d2
   return $ DBool $ f d1' d2'
@@ -35,7 +35,7 @@ wrap_2i_b n f = Prim2 n (TLambda TInt $ TLambda TInt TBool) $ \d1 d2 st -> do
 wrap_2b_b :: String -> (Bool -> Bool -> Bool) -> Primitive
 
 -- maybe will be needed in the future though I doubt it, those are usually lazy
-wrap_2b_b n f = Prim2 n (TLambda TBool $ TLambda TBool TBool) $ \d1 d2 st -> do
+wrap_2b_b n f = Prim n (TLambda TBool $ TLambda TBool TBool) 2 $ \[d1,d2] st -> do
   DBool d1' <- computeData st d1
   DBool d2' <- computeData st d2
   return $ DBool $ f d1' d2'
@@ -74,14 +74,14 @@ pGe = wrap_2i_b "ge" (>=)
 
 
 
-pDiv = Prim2 "div" (TLambda TInt $ TLambda TInt TInt) $ \d1 d2 st -> do
+pDiv = Prim "div" (TLambda TInt $ TLambda TInt TInt) 2 $ \[d1,d2] st -> do
   DInt d1' <- computeData st d1
   DInt d2' <- computeData st d2
   if d2' == 0
     then throwError (st, "zero division error!")
     else return $ DInt $ d1' `div` d2'
 
-pMod = Prim2 "mod" (TLambda TInt $ TLambda TInt TInt) $ \d1 d2 st -> do
+pMod = Prim "mod" (TLambda TInt $ TLambda TInt TInt) 2 $ \[d1,d2] st -> do
   DInt d1' <- computeData st d1
   DInt d2' <- computeData st d2
   if d2' == 0
@@ -90,30 +90,30 @@ pMod = Prim2 "mod" (TLambda TInt $ TLambda TInt TInt) $ \d1 d2 st -> do
 
 
 
-pAnd = Prim2 "and" (TLambda TBool $ TLambda TBool TBool) $ \d1 d2 st -> do
+pAnd = Prim "and" (TLambda TBool $ TLambda TBool TBool) 2 $ \[d1,d2] st -> do
   DBool d1' <- computeData st d1
   if d1'
     then computeData st d2
   else return $ DBool False
 
-pOr = Prim2 "or" (TLambda TBool $ TLambda TBool TBool) $ \d1 d2 st -> do
+pOr = Prim "or" (TLambda TBool $ TLambda TBool TBool) 2 $ \[d1,d2] st -> do
   DBool d1' <- computeData st d1
   if d1'
     then return $ DBool True
     else computeData st d2
 
-pNot = Prim1 "not" (TLambda TBool TBool) $ \d1 st -> do
+pNot = Prim "not" (TLambda TBool TBool) 1 $ \[d1] st -> do
   DBool d1' <- computeData st d1
   return $ DBool $ not d1'
 
-pIf = Prim3 "if" (TLambda TBool $ TLambda (TVar "a") $ TLambda (TVar "a") (TVar "a")) $
-  \d1 d2 d3 st -> do
+pIf = Prim "if" (TLambda TBool $ TLambda (TVar "a") $ TLambda (TVar "a") (TVar "a")) 3 $
+  \[d1,d2,d3] st -> do
     DBool cond <- computeData st d1
     if cond
       then computeData st d2
       else computeData st d3
 
-pUndef = Prim0 "undefined" (TVar "a") $ \st -> throwError (st, "undefined expresison reached!")
+pUndef = Prim "undefined" (TVar "a") 0 $ \[] st -> throwError (st, "undefined expresison reached!")
 
 -- primitives aggregation, first builtin ones, then named ones
 builtins :: [(Primitive, VarE)]
