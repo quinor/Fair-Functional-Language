@@ -47,13 +47,14 @@ operator :: Parser String
 eExpr :: Parser Exp
 eExprSingle :: Parser Exp
 eLambda :: Parser Exp
-unique :: [VarE] -> Parser ()
+unique :: (Show a, Ord a) => [a] -> Parser ()
 letDecls :: Parser [(VarE, Maybe Type, Exp)]
 eLet :: Parser Exp
 eRec :: Parser Exp
 eIf :: Parser Exp
 
-orderRecClauses :: Position -> [(VarE, Maybe Type, Exp)] -> Exp -> Exp
+--the exp is ELetRec
+orderRecClauses :: Exp -> Exp
 getVars :: Exp -> S.Set VarE
 
 
@@ -61,6 +62,7 @@ getVars :: Exp -> S.Set VarE
 tInt :: Parser Type
 tBool :: Parser Type
 tLambda :: Parser Type
+tAlgebraic :: Parser Type
 tVar :: Parser Type
 tTypeSingle :: Parser Type
 tType :: Parser Type
@@ -168,7 +170,7 @@ eLambda = do
 
 unique l = foldM_ (\s n ->
     if n `S.member` s
-      then fail $ "variable " ++ n ++ " appears more than once in the declaration!"
+      then fail $ "symbol " ++ show n ++ " appears more than once in the declaration!"
       else return $ n `S.insert` s
   )
   S.empty
@@ -199,7 +201,7 @@ eRec = do
   vars <- letDecls
   rword "in"
   e2 <- eExpr
-  return $ orderRecClauses p vars e2
+  return $ orderRecClauses $ ELetRec p vars e2
 
 eIf = do
   p0 <- getPos
@@ -222,25 +224,29 @@ getVars ex = case ex of
   EData _ _       -> S.empty
   EApply _ e1 e2  -> getVars e1 `S.union` getVars e2
   ELet _ l e      ->
-    (S.unions $ map (getVars . \(_,_,a) -> a)l) `S.union` (getVars e S.\\ (S.fromList $ map (\(a,_,_) -> a) l))
+    (S.unions $ map (getVars . \(_,_,a) -> a)l) `S.union`
+    (getVars e S.\\ (S.fromList $ map (\(a,_,_) -> a) l))
   ELetRec _ l e   ->
-    (getVars e `S.union` (S.unions $ map (getVars . (\(_,_,a) -> a)) l)) S.\\ (S.fromList $ map (\(a,_,_) -> a) l)
+    (getVars e `S.union` (S.unions $ map (getVars . (\(_,_,a) -> a)) l)) S.\\
+    (S.fromList $ map (\(a,_,_) -> a) l)
   ELambda _ n e   -> getVars e S.\\ S.singleton n
   EOpExpr _ e l   -> getVars e `S.union` S.unions (map (\(_,eu) -> getVars eu) l)
 
-orderRecClauses p l ex = let
+orderRecClauses (ELetRec p l ex) = let
   labels = map (\(a,_,_) -> a) l
   gr = map (\(n, ann, e) -> ((n, ann, e), n, filter (\a -> S.member a $ getVars e) labels)) l
   scc = map G.flattenSCC $ G.stronglyConnComp gr
   in foldr (ELetRec p) ex scc
 
+orderRecClauses _ = undefined -- I _know_ it won't be called on anything else.
+
 
 -- type
-tInt = try $ do
+tInt = do
   rword "Int"
   return TInt
 
-tBool = try $ do
+tBool = do
   rword "Bool"
   return TBool
 
@@ -250,13 +256,19 @@ tLambda = try $ do -- I regret that try but it has to be there...
   t2 <- tType
   return $ TLambda t1 t2
 
-tVar = try $ do
+tAlgebraic = do
+  name <- uIdentifier
+  ts <- many tType
+  return $ TAlgebraic name ts
+
+tVar = do
   a <- lIdentifier
   return $ TUserVar a
 
 tTypeSingle = do
       tInt
   <|> tBool
+  <|> tAlgebraic
   <|> tVar
   <|> parens tType
 
@@ -363,8 +375,18 @@ newAlgType = do
   name <- uIdentifier
   params <- many lIdentifier
   rop "="
-  cstrs <- sepBy1 singleConstructor (rop "|")
-  return $ AlgType name params cstrs
+  constructors <- sepBy1 singleConstructor (rop "|")
+
+  let retType = TAlgebraic name $ map TVar params
+  let {primConstructors = map
+    (\(cName, argTypes) -> let
+      ftype = removeUser $ foldr TLambda retType argTypes
+      cfun = (\d _ -> return $ DAlgebraic cName d)
+      in Prim cName ftype (length argTypes) cfun
+      )
+    constructors
+  }
+  return $ AlgType name (length params) primConstructors
 
 namedExp = do
   rword "def"
@@ -377,7 +399,7 @@ namedExp = do
 toplevelDef =
       namedExp
   <|> newOperator
---  <|> newAlgType
+  <|> newAlgType
 
 langParser = do
   p0 <- getPos
@@ -388,13 +410,26 @@ langParser = do
   let opMap = M.union (M.fromList [(s,op) | (Operator s op) <- tlds]) defOpMap
 
   --algtypes
-  --[(name, vars, vstrs) | (AlgType name vars cstrs) <- tlds]
+  let algTypes = [(name, arity, consPrimitives) | (AlgType name arity consPrimitives) <- tlds]
+  unique $ map (\(a,n,_) -> (a,n)) algTypes
+  unique $ concatMap (\(_,_,a) -> map takeName a) algTypes
+  let {typeDefinitions = let
+    constructorEList = map
+      (\p -> (takeName p, Nothing, EData (Position "ADTs" 0 0) (DPrimitive p)))
+      (concatMap (\(_, _, p) -> p) algTypes)
+    in ELet (Position "ADTs" 0 0) constructorEList
+  }
+  -- needed?
+  --let typeArities = M.fromList $ map (\(n, l, _) -> (n, l)) algTypes
 
   --definitions
-  defs <- mapM
-    (\(n, ann, e) -> do
-      e' <- finishOps opMap e
-      return (n, ann, e'))
-    [(n,ann,e) | (NamedExp n ann e) <- tlds]
+  let defs = [(n,ann,e) | (NamedExp n ann e) <- tlds]
   unique $ map (\(a,_,_) -> a) defs
-  return $ Program $ orderRecClauses p0 defs (EVar p1 "main")
+
+  --combining stuff together
+
+  let prog = ELetRec p0 defs (EVar p1 "main")
+  prog' <- finishOps opMap prog
+  let prog'' = orderRecClauses prog'
+  let prog''' = typeDefinitions prog''
+  return $ Program prog'''

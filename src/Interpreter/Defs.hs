@@ -12,6 +12,7 @@ module Interpreter.Defs (
   TLD(..),
   Program(..),
   Type(..),
+  removeUser,
   Primitive(..),
   Dataspace,
   Namespace,
@@ -80,7 +81,7 @@ type OpMap = M.Map String Op
 -- toplevel definition in a program
 data TLD =
     Operator String Op
-  | AlgType String [VarT] [(String, [Type])]
+  | AlgType String Int [Primitive]
   | NamedExp VarE (Maybe Type) Exp
   deriving Show
 
@@ -92,15 +93,19 @@ data Type =
     TInt
   | TBool
   | TLambda Type Type
-  | TAlgebraic String [VarT]
+  | TAlgebraic String [Type]
   | TVar VarT
   | TUserVar VarT
+
+--replace uservar in type with regular var
+removeUser :: Type -> Type
+
 
 
 -- primitive function with type, string is primitive name (for docs/error purposes)
 -- stacktrace argument is for failing when primitive fails
 data Primitive =
-    Prim String Type Int ([Data] -> Stacktrace -> Interpreter Data)
+  Prim String Type Int ([Data] -> Stacktrace -> Interpreter Data)
 
 -- name getter for primitives
 takeName :: Primitive -> String
@@ -121,6 +126,12 @@ takePos (EVar    p _  ) = p
 takePos (EOpExpr p _ _) = p
 
 takeName (Prim n _ _ _) = n
+
+removeUser t = case t of
+  TUserVar x      -> TVar x
+  TLambda t1 t2   -> TLambda (removeUser t1) (removeUser t2)
+  TAlgebraic n ts -> TAlgebraic n (map removeUser ts)
+  x               -> x
 
 printStacktrace l = foldr1 (++) (map (\e -> show e ++ "\n") l)
 
@@ -196,7 +207,7 @@ prType :: Type -> PP.Doc
 prType TInt               = PP.text "Int"
 prType TBool              = PP.text "Bool"
 prType (TLambda a b)      = prParenType a PP.<+> PP.text "->" PP.<+> prType b
-prType (TAlgebraic n vs)  = PP.text n PP.<+> PP.hsep (map PP.text vs)
+prType (TAlgebraic n vs)  = PP.text n PP.<+> PP.hsep (map prParenType vs)
 prType (TVar n)           = PP.text n
 prType (TUserVar n)       = PP.text $ "<" ++ n ++ ">"
 

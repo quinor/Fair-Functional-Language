@@ -1,0 +1,3 @@
+data List a = Cons a (List a) | Empty
+
+def main :: List Int = Cons 2 $ Cons 3 Empty

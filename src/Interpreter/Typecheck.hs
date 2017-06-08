@@ -55,31 +55,30 @@ generalize :: TypeEnv -> Type -> TypeScheme
 --substitute all forall vars with fresh ones
 instantiate :: TypeScheme -> TypeChecker Type
 
---replace uservar in type with regular var
-removeUser :: Type -> Type
-
 --apply type annotation and return type scheme
 resolveAnnotation :: TypeEnv -> Position -> Maybe Type -> Type -> TypeChecker TypeScheme
 
 --debug. ugly.
 debugMessage :: String -> TypeChecker ()
-debugMessage = if False then traceM else \_ -> return ()
+debugMessage = if True then traceM else \_ -> return ()
 
 --inferType preliminaries
 
 instance Types Type where
   freeVars t = case t of
-    TInt          -> S.empty
-    TBool         -> S.empty
-    TLambda t1 t2 -> freeVars t1 `S.union` freeVars t2
-    TVar v        -> S.singleton v
-    TUserVar _    -> S.empty
+    TInt            -> S.empty
+    TBool           -> S.empty
+    TLambda t1 t2   -> freeVars t1 `S.union` freeVars t2
+    TAlgebraic _ l  -> S.unions $ map freeVars l
+    TVar v          -> S.singleton v
+    TUserVar _      -> S.empty
   applySub sub t = case t of
-    TInt          -> TInt
-    TBool         -> TBool
-    TLambda t1 t2 -> TLambda (applySub sub t1) (applySub sub t2)
-    TVar v        -> fromMaybe (TVar v) $ M.lookup v sub
-    TUserVar _    -> t
+    TInt            -> TInt
+    TBool           -> TBool
+    TLambda t1 t2   -> TLambda (applySub sub t1) (applySub sub t2)
+    TAlgebraic n l  -> TAlgebraic n $ map (applySub sub) l
+    TVar v          -> fromMaybe (TVar v) $ M.lookup v sub
+    TUserVar _      -> t
 
 
 instance Types TypeScheme where
@@ -103,22 +102,33 @@ nullSub = M.empty
 compose s1 s2 = M.map (applySub s1) s2 `M.union` s1
 
 unify p t1 t2 = case (t1, t2) of
-  (TBool, TBool)              -> return nullSub
-  (TInt, TInt)                -> return nullSub
-  (TLambda a b, TLambda c d)  -> do
+  (TBool, TBool)                        -> return nullSub
+  (TInt, TInt)                          -> return nullSub
+  (TLambda a b, TLambda c d)            -> do
     u1 <- unify p a c
     u2 <- unify p (applySub u1 b) (applySub u1 d)
     return $ u2 `compose` u1
-  (TVar a, t)                 -> case t of -- should wipe a out of existence
+  (TAlgebraic n1 l1, TAlgebraic n2 l2)  -> if n1 == n2 && length l1 == length l2
+    then do
+      resultSub <- foldM
+        (\oldSub (te1, te2) -> do
+          sub <- unify p (applySub oldSub te1) (applySub oldSub te2)
+          return $ sub `compose` oldSub
+        )
+        nullSub
+        (zip l1 l2)
+      return resultSub
+    else throwError (p, "expressions don't unify! " ++ show t1 ++ " and " ++ show t2)
+  (TVar a, t)                           -> case t of -- should wipe a out of existence
     TVar x | a == x   -> return nullSub
     x                 -> if a `S.member` freeVars x
       then throwError (p, "occur check") -- occur check
       else return $ M.singleton a x
   -- must be later becouse overlaps with previous one
-  (t, TVar a)                 -> unify p (TVar a) t
+  (t, TVar a)                           -> unify p (TVar a) t
   (TUserVar a, TUserVar b)
-    | a == b                  -> return nullSub
-  (_, _)                      -> throwError
+    | a == b                            -> return nullSub
+  (_, _)                                -> throwError
     (p, "expressions don't unify! " ++ show t1 ++ " and " ++ show t2) -- unification error
 
 
@@ -136,12 +146,6 @@ instantiate (Scheme vars t) = do
   newVars <- mapM (\_ -> newVar "va_inst_") vars
   let s = M.fromList (zip vars newVars)
   return $ applySub s t
-
-
-removeUser t = case t of
-  TUserVar x    -> TVar x
-  TLambda t1 t2 -> TLambda (removeUser t1) (removeUser t2)
-  x             -> x
 
 
 resolveAnnotation env pos ann t = case ann of

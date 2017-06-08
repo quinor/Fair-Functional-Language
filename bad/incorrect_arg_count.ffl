@@ -1,0 +1,3 @@
+def f = 5
+
+def main = f 10

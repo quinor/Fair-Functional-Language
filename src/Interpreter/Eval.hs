@@ -21,6 +21,9 @@ exec :: Namespace -> Stacktrace -> Exp -> Interpreter Data
 -- ensure data is not lazied
 computeData :: Stacktrace -> Data -> Interpreter Data
 
+-- remove all references from data together with unlazying it, only for program output purposes
+derefData :: Stacktrace -> Data -> Interpreter Data
+
 -- run expression and retrieve the result
 evalProgram :: Exp -> Either (Stacktrace, String) Data
 
@@ -62,6 +65,16 @@ computeData st (DLazyApply st' funL valL) = do
 
 computeData _ a = return a
 
+
+-- compute data and resolve all references
+derefData st d = computeData st d >>= \case
+  DRef pos        -> derefData st =<< state (\sta -> (sta `Sequence.index` pos, sta))
+  DAlgebraic n ds -> do
+    ds' <- mapM (derefData st) ds
+    return $ DAlgebraic n ds'
+  x               -> return x
+
+
 -- exec implementation
 exec ns st expr = case expr of
   EVar _ var                          -> do
@@ -93,7 +106,9 @@ exec ns st expr = case expr of
     return $ DLambda ns var def
   _                                   -> undefined
 
+
 evalProgram prog = fst $ runState
   (runExceptT $
-    exec M.empty [(Position "<main>" 0 0)] prog >>= computeData [(Position "<main>" 0 0)])
+    exec M.empty [(Position "<main>" 0 0)] prog >>= derefData [(Position "<main>" 0 0)]
+    )
   Sequence.empty
