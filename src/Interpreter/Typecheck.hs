@@ -122,7 +122,7 @@ unify p t1 t2 = case (t1, t2) of
   (TVar a, t)                           -> case t of -- should wipe a out of existence
     TVar x | a == x   -> return nullSub
     x                 -> if a `S.member` freeVars x
-      then throwError (p, "occur check") -- occur check
+      then throwError (p, "occur check! " ++ show t1 ++ " and " ++ show t2) -- occur check
       else return $ M.singleton a x
   -- must be later becouse overlaps with previous one
   (t, TVar a)                           -> unify p (TVar a) t

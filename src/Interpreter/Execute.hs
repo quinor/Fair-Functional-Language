@@ -14,7 +14,8 @@ import Text.Megaparsec
 runProgram :: String -> String -> IO ()
 
 runProgram fn f = do
-  let prog = parseStr fn f
+  stdlib <- readFile "stdlib.ffl"
+  let prog = parseStr fn (f ++ "\n" ++ stdlib)
   case prog of
     Left err    -> putStrLn $ parseErrorPretty err
     Right (Program e) -> do

@@ -1,0 +1,51 @@
+# Simple set without removal
+
+
+data Tree a =
+    Node a (Tree a) (Tree a)
+  | Leaf
+
+data Set a = Set (a -> a -> Compare) (Tree a)
+
+def emptySet = \cmp -> Set cmp Leaf
+
+def null = \match Set _ n -> match n with
+    Node _ _ _  -> False
+  | Leaf        -> True
+
+def size = rec
+  size_impl = \match
+      Node _ l r  -> 1 + (size_impl l) + (size_impl r)
+    | Leaf        -> 0
+  in \match Set _ n -> size_impl n
+
+def member = \x -> \match Set cmp n -> rec
+  member_impl = \match
+      Node e l r -> match cmp x e with
+        Lt -> member_impl l
+      | Eq -> True
+      | Gt -> member_impl r
+      end
+    | Leaf    -> False
+  in member_impl n
+
+def insert = \x -> \match Set cmp n -> rec
+  insert_impl = \match
+      Leaf        -> Node x Leaf Leaf
+    | Node e l r  -> match cmp x e with
+        Lt -> Node e (insert_impl l) r
+      | Eq -> Node e l r
+      | Gt -> Node e l (insert_impl r)
+  in Set cmp $ insert_impl n
+
+def fromList = \cmp -> foldr insert (emptySet cmp)
+
+def main = let
+  tr = fromList int_cmp (Cons 5 $ Cons 3 $ Cons 8 $ Cons 2 Empty)
+  in
+    (not $ member 4 tr) &&
+    member 3 tr &&
+    size tr == 4 &&
+    (not $ null tr)
+
+

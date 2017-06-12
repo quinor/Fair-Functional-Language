@@ -100,7 +100,7 @@ toplevelDef :: Parser TLD
 
 -- utility/defs
 reserved = ["def", "data", "type", "True", "False", "let", "rec", "and", "match", "with", "in", "if",
-  "then", "else", "\\", "->", "<-", "=", "|", "Integer", "Boolean", "newop", "of", "Int", "Bool"]
+  "then", "else", "\\", "->", "<-", "=", "|", "Integer", "Boolean", "newop", "of", "Int", "Bool", "end"]
 
 getPos = do
   p <- getPosition
@@ -247,6 +247,7 @@ eMatch = do
   e <- eExpr
   rword "with"
   decls <- sepBy1 matchClause (rop "|")
+  _ <- optional $ rword "end"
   return $ EMatch p decls e
 
 
@@ -254,6 +255,7 @@ eMatchFun = do
   p <- getPos
   try (rop "\\" >> rword "match")
   decls <- sepBy1 matchClause (rop "|")
+  _ <- optional $ rword "end"
   let varName = builtinPrefix ++ "match_var"
   return $ ELambda p varName $ EMatch p decls (EVar p varName)
 

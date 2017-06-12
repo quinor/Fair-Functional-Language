@@ -19,9 +19,16 @@ Language features:
   * some light syntactic sugar (ie. multivariable lambdas)
   * error handling parse-, typecheck- and run-time with file/line number/column references
 
-Non-implemented (yet) features:
-  * ADTs + pattern matching (maybe also GADTs)
+Non-implemented features:
   * classes, monads and IO
 
-Standard library does not exist yet, there is only a bunch of builtin functions from
-Interpreter.Primitives.
+Standard library implemented in `stdlib.ffl`.
+
+
+Match expression syntax is non-obvius. There is:
+```
+match expression with
+  Constructor1 param1 param2 -> result1 | Constructor2 -> result2 end
+```
+where end is optional and used to force finish match expression, very useful in case of nested
+matches which would be unimplementable otherwise.
