@@ -5,14 +5,19 @@ module Interpreter.Parser (
   ParseResult
 ) where
 import Interpreter.Defs
+import Interpreter.Eval
 import Interpreter.Primitives (builtinPrefix)
 import Control.Monad
 import Text.Megaparsec
 import Text.Megaparsec.String
 import qualified Text.Megaparsec.Lexer as L
+import qualified Data.List as L
+import qualified Data.Set as S
 import qualified Data.Map as M
 import qualified Data.Graph as G
-import qualified Data.Set as S
+import Data.Maybe (fromJust)
+
+
 
 
 type ParseResult = Either (ParseError (Token String) Dec) Program
@@ -52,6 +57,9 @@ letDecls :: Parser [(VarE, Maybe Type, Exp)]
 eLet :: Parser Exp
 eRec :: Parser Exp
 eIf :: Parser Exp
+matchClause :: Parser (String, Int, Exp)
+eMatch :: Parser Exp
+eMatchFun :: Parser Exp
 
 --the exp is ELetRec
 orderRecClauses :: Exp -> Exp
@@ -72,7 +80,11 @@ tTypeAnnotation :: Parser (Maybe Type)
 defOpMap :: OpMap
 applyOp :: Op -> Exp -> Exp -> Exp
 exprConversion :: [Exp] -> [Op] -> [(Op, Exp)] -> Exp
-finishOps :: OpMap -> Exp -> Parser Exp
+postprocessProgram ::
+  OpMap ->
+  (M.Map String [String]) ->
+  (M.Map String (Int, String)) ->
+  Exp -> Parser Exp
 
 
 -- algtype parsing
@@ -88,7 +100,7 @@ toplevelDef :: Parser TLD
 
 -- utility/defs
 reserved = ["def", "data", "type", "True", "False", "let", "rec", "and", "match", "with", "in", "if",
-  "then", "else", "\\", "->", "<-", "=", "Integer", "Boolean", "newop", "of"]
+  "then", "else", "\\", "->", "<-", "=", "|", "Integer", "Boolean", "newop", "of", "Int", "Bool"]
 
 getPos = do
   p <- getPosition
@@ -110,7 +122,7 @@ symbol = L.symbol sc
 parens = between (symbol "(") (symbol ")")
 
 lIdentifier = try $ do
-  s <- lexeme $ (:) <$> lowerChar <*> many (alphaNumChar <|> char '_')
+  s <- lexeme $ (:) <$> (lowerChar <|> char '_') <*> many (alphaNumChar <|> char '_')
   if s `elem` reserved
     then fail $ "forbidden: keyword " ++ show s ++ " cannot be an identifier"
     else return s
@@ -143,6 +155,8 @@ eExprSingle =
   <|> eLet
   <|> eRec
   <|> eIf
+  <|> eMatch
+  <|> eMatchFun
   <|> parens eExpr
 
 eBoolean = do
@@ -162,8 +176,7 @@ eVariable = do
 
 eLambda = do
   p <- getPos
-  rop "\\"
-  vars <- many lIdentifier
+  vars <- try (rop "\\" *> some lIdentifier)
   rop "->"
   e <- eExpr
   return $ foldr (ELambda p) e vars
@@ -195,6 +208,7 @@ eLet = do
   e2 <- eExpr
   return $ ELet p vars e2
 
+
 eRec = do
   p <- getPos
   rword "rec"
@@ -202,6 +216,7 @@ eRec = do
   rword "in"
   e2 <- eExpr
   return $ orderRecClauses $ ELetRec p vars e2
+
 
 eIf = do
   p0 <- getPos
@@ -215,6 +230,32 @@ eIf = do
   p3 <- getPos
   e2 <- eExpr
   return $ EApply p3 (EApply p2 (EApply p1 (EVar p0 $ builtinPrefix ++ "if") cond) e1) e2
+
+
+matchClause = do
+  p <- getPos
+  cName <- uIdentifier
+  vars <- many lIdentifier
+  rop "->"
+  e <- eExpr
+  return $ (cName, length vars, foldr (ELambda p) e vars)
+
+
+eMatch = do
+  p <- getPos
+  rword "match"
+  e <- eExpr
+  rword "with"
+  decls <- sepBy1 matchClause (rop "|")
+  return $ EMatch p decls e
+
+
+eMatchFun = do
+  p <- getPos
+  try (rop "\\" >> rword "match")
+  decls <- sepBy1 matchClause (rop "|")
+  let varName = builtinPrefix ++ "match_var"
+  return $ ELambda p varName $ EMatch p decls (EVar p varName)
 
 
 -- get all variables appearing in an expression that were not defined in it,
@@ -231,6 +272,7 @@ getVars ex = case ex of
     (S.fromList $ map (\(a,_,_) -> a) l)
   ELambda _ n e   -> getVars e S.\\ S.singleton n
   EOpExpr _ e l   -> getVars e `S.union` S.unions (map (\(_,eu) -> getVars eu) l)
+  EMatch _ l e    -> getVars e `S.union` S.unions (map (\(_,_,eu) -> getVars eu) l)
 
 orderRecClauses (ELetRec p l ex) = let
   labels = map (\(a,_,_) -> a) l
@@ -283,8 +325,8 @@ tTypeAnnotation = optional $ do
 -- expr postprocess
 defOpMap = M.fromList [
   ("$", Op 0 AssR "__special__lambda"),
-  ("||", Op 2 AssL $ builtinPrefix ++ "or"),
-  ("&&", Op 3 AssL $ builtinPrefix ++ "and"),
+  ("||", Op 2 AssR $ builtinPrefix ++ "or"),
+  ("&&", Op 3 AssR $ builtinPrefix ++ "and"),
   ("==", Op 4 AssL $ builtinPrefix ++ "eq"),
   ("/=", Op 4 AssL $ builtinPrefix ++ "neq"),
   ("<=", Op 4 AssL $ builtinPrefix ++ "le"),
@@ -322,35 +364,69 @@ exprConversion
 
 exprConversion _ _ _ = undefined -- should never happen
 
-finishOps om ex = let
-  mapLets = mapM (\(v, t, e) -> finishOps om e >>= \e' -> return (v, t, e'))
-  in case ex of
+postprocessProgram opMap typeMap constructorMap prog = let
+  mapLets = mapM (\(v, t, e) -> postprocImpl e >>= \e' -> return (v, t, e'))
+  postprocImpl = \ex -> case ex of
     ELambda p v e   -> do
-      e' <- (finishOps om e)
+      e' <- (postprocImpl e)
       return $ ELambda p v e'
     ELet p l e      -> do
       l' <- mapLets l
-      e' <- finishOps om e
+      e' <- postprocImpl e
       return $ ELet p l' e'
     ELetRec p l e   -> do
       l' <- mapLets l
-      e' <- finishOps om e
+      e' <- postprocImpl e
       return $ ELetRec p l' e'
     EApply p e1 e2  -> do
-      e1' <- (finishOps om e1)
-      e2' <- (finishOps om e2)
+      e1' <- (postprocImpl e1)
+      e2' <- (postprocImpl e2)
       return $ EApply p e1' e2'
-    EOpExpr _ h t   -> do
-      h' <- finishOps om h
+    EOpExpr p h t   -> do
+      h' <- postprocImpl h
       t' <- mapM (\(oname, e) -> do
-        e' <- finishOps om e
-        case M.lookup oname om of
-          Nothing -> fail $ "No such operator: " ++ oname
+        e' <- postprocImpl e
+        case M.lookup oname opMap of
+          Nothing -> fail $ "No such operator: " ++ oname ++ " (actual position " ++ show p ++ ") "
           Just op -> return (op, e')
         ) t
       return $ exprConversion [h'] [] t'
+    EMatch p clauses e    -> do
+      e' <- postprocImpl e
+      clauses' <- mapM (\(n, a, f) -> postprocImpl f >>= \f' -> return (n, a, f')) clauses
+      tmp <- mapM (\(name,arity,_) ->
+        case M.lookup name constructorMap of
+          Nothing       -> fail $ "No such constructor: " ++ name ++ " in " ++ show p
+          Just (ar, ty) -> return (ar == arity, ty)
+        ) clauses'
+
+      -- arity check
+      unless (and $ map fst tmp) $ fail $ "Incorrect arity of constructor in " ++ show p
+      --types check
+      unless
+        ((1 ==) . length . L.nub $ map snd tmp) $
+        fail $ "Constructors are not of the same type in " ++ show p
+
+      let typeName = snd $ head tmp
+      let ctors = tail $ fromJust $ M.lookup typeName typeMap -- tail for destructor removal
+
+      --clause uniqueness check
+      unique (map (\(n,_,_) -> n) clauses')
+      --exhaustiveness check
+      unless (length clauses' == length ctors) $ fail $ "Pattern is not exhaustive in " ++ show p
+      let {orderedFuns = let
+        dict = M.fromList $ map (\(n,_,f) -> (n, f)) clauses'
+        in map (\name -> fromJust $ M.lookup name dict) ctors
+      }
+
+      let typeFn = EVar p $ builtinPrefix ++ "match_" ++ typeName
+      let matchExpr = foldr (flip $ EApply p) typeFn (e': reverse orderedFuns)
+
+      return matchExpr
+
     EData _ _       -> return ex
     EVar _ _        -> return ex
+  in postprocImpl prog
 
 
 -- algtype
@@ -376,17 +452,30 @@ newAlgType = do
   params <- many lIdentifier
   rop "="
   constructors <- sepBy1 singleConstructor (rop "|")
+  return $ let
+    retTypeConstructor = TAlgebraic name $ map TVar params
+    primConstructors = map
+      (\(cName, argTypes) -> let
+        ftype = removeUser $ foldr TLambda retTypeConstructor argTypes
+        cfun = (\d _ -> return $ DAlgebraic cName d)
+        in Prim cName ftype (length argTypes) cfun
+        )
+      constructors
+    retTypeMatch = TVar "_match_ret_type"
 
-  let retType = TAlgebraic name $ map TVar params
-  let {primConstructors = map
-    (\(cName, argTypes) -> let
-      ftype = removeUser $ foldr TLambda retType argTypes
-      cfun = (\d _ -> return $ DAlgebraic cName d)
-      in Prim cName ftype (length argTypes) cfun
-      )
-    constructors
-  }
-  return $ AlgType name (length params) primConstructors
+    typeMatchClauses = map (\(_, argTypes) -> foldr TLambda retTypeMatch argTypes) constructors
+    typeMatch = removeUser $ foldr TLambda (TLambda retTypeConstructor retTypeMatch) typeMatchClauses
+    dFun = \args st -> do
+      let funs = init args
+      DAlgebraic cName vals <- computeData st (last args)
+      return $ foldr
+        (\(f, n) follow -> if n == cName then foldl (DLazyApply st) f vals else follow)
+        DUndefined -- should always match something
+        (zip funs $ map fst constructors)
+
+    destructor = Prim (builtinPrefix ++ "match_" ++ name) typeMatch (1 + length constructors) dFun
+
+    in AlgType name (1 + length params) (destructor:primConstructors)
 
 namedExp = do
   rword "def"
@@ -411,7 +500,7 @@ langParser = do
 
   --algtypes
   let algTypes = [(name, arity, consPrimitives) | (AlgType name arity consPrimitives) <- tlds]
-  unique $ map (\(a,n,_) -> (a,n)) algTypes
+  unique $ map (\(n,_,_) -> n) algTypes
   unique $ concatMap (\(_,_,a) -> map takeName a) algTypes
   let {typeDefinitions = let
     constructorEList = map
@@ -419,9 +508,11 @@ langParser = do
       (concatMap (\(_, _, p) -> p) algTypes)
     in ELet (Position "ADTs" 0 0) constructorEList
   }
-  -- needed?
-  --let typeArities = M.fromList $ map (\(n, l, _) -> (n, l)) algTypes
-
+  let typeConstructors = M.fromList $ map (\(n, _, cs) -> (n, map takeName cs)) algTypes
+  let {constructorTypes = M.fromList $ concatMap
+      (\(n, _, cs) -> map (\(Prim cName _ ar _) -> (cName, (ar, n))) cs)
+      algTypes
+  }
   --definitions
   let defs = [(n,ann,e) | (NamedExp n ann e) <- tlds]
   unique $ map (\(a,_,_) -> a) defs
@@ -429,7 +520,7 @@ langParser = do
   --combining stuff together
 
   let prog = ELetRec p0 defs (EVar p1 "main")
-  prog' <- finishOps opMap prog
+  prog' <- postprocessProgram opMap typeConstructors constructorTypes prog
   let prog'' = orderRecClauses prog'
   let prog''' = typeDefinitions prog''
   return $ Program prog'''

@@ -1,3 +1,73 @@
-data List a = Cons a (List a) | Empty
+def compose
+  :: (b -> c) -> (a -> b) -> (a -> c)
+  = \f g e -> f (g e)
 
-def main :: List Int = Cons 2 $ Cons 3 Empty
+newop . of Right 9 compose
+
+data List a =
+    Cons a (List a)
+  | Empty
+
+
+def head
+  :: (List a) -> a
+  = \match
+      Cons a _  -> a
+    | Empty     -> undefined
+
+def tail
+  :: (List a) -> List a
+  = \match
+      Cons _ a  -> a
+    | Empty     -> undefined
+
+def empty
+  :: (List a) -> Bool
+  = \match
+      Cons _ _  -> False
+    | Empty     -> True
+
+def foldr
+  :: (a -> b -> b) -> b -> (List a) -> b
+  = \fun st li -> rec
+    foldr_impl = \match
+        Cons hd tl  -> fun hd $ foldr_impl tl
+      | Empty       -> st
+    in foldr_impl li
+
+def foldl
+  :: (b -> a -> b) -> b -> (List a) -> b
+  = \fun acc li -> rec
+    foldl_impl = \acc -> \match
+        Cons hd tl  -> foldl_impl (fun acc hd) tl
+      | Empty       -> acc
+    in foldl_impl acc li
+
+def map
+  :: (a -> b) -> (List a) -> (List b)
+  = \fun li -> rec
+    map_impl = \match
+        Cons hd tl  -> Cons (fun hd) (map_impl tl)
+      | Empty       -> Empty
+    in map_impl li
+
+def zip
+  :: (a -> b -> c) -> (List a) -> (List b) -> (List c)
+  = \fun l1 l2 -> rec
+    zip_impl = \l1 l2 ->
+      if (not . empty) l1 && (not . empty) l2
+      then Cons (fun (head l1) (head l2)) $ zip_impl (tail l1) (tail l2)
+      else Empty
+    in zip_impl l1 l2
+
+def take
+  :: Int -> (List a) -> List a
+  = \n l ->
+    if n <= 0 || empty l
+    then Empty
+    else Cons (head l) (take (n-1) (tail l))
+
+
+def main = rec
+  fib = Cons 0 $ Cons 1 $ zip (\a b -> a+b) fib (tail fib)
+  in take 10 fib

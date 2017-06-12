@@ -63,6 +63,7 @@ data Exp =
   | EData   Position Data                           -- just Data constant
   | EVar    Position VarE                           -- just Var
   | EOpExpr Position Exp [(String, Exp)]            -- fake type for parsing (before ops are known)
+  | EMatch  Position [(String, Int, Exp)] Exp       -- also fake type for parsing (before constructors are known)
 
 -- position getter for expressions
 takePos :: Exp -> Position
@@ -124,6 +125,7 @@ takePos (EApply  p _ _) = p
 takePos (EData   p _  ) = p
 takePos (EVar    p _  ) = p
 takePos (EOpExpr p _ _) = p
+takePos (EMatch  p _ _) = p
 
 takeName (Prim n _ _ _) = n
 
@@ -189,6 +191,7 @@ prExp (ELetRec _ l e) =
   PP.$$ PP.nest (-3) (PP.text "in" PP.<+> prExp e)
 prExp (ELambda _ n e) = PP.text "\\" PP.<+> PP.text n PP.<+> PP.text "->" PP.<+> prExp e
 prExp (EOpExpr _ e l) = PP.text $ show e ++ " " ++ show (map snd l)
+prExp (EMatch _ e l) = PP.text $ "match" ++ show e ++ " with " ++ show l
 
 prParenExp :: Exp -> PP.Doc
 prParenExp t = case t of
