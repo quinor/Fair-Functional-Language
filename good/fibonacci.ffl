@@ -2,5 +2,3 @@
 def main = rec
   fib = Cons 0 $ Cons 1 $ zip (\a b -> a+b) fib (tail fib)
   in take 10 $ drop 5 fib
-
-
