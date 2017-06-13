@@ -47,5 +47,3 @@ def main = let
     member 3 tr &&
     size tr == 4 &&
     (not $ null tr)
-
-

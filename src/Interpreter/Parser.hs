@@ -92,6 +92,7 @@ singleConstructor :: Parser (String, [Type])
 
 -- toplevel parsing
 newOperator :: Parser TLD
+allVars :: Type -> S.Set String
 newAlgType :: Parser TLD
 namedExp :: Parser TLD
 toplevelDef :: Parser TLD
@@ -448,12 +449,25 @@ newOperator = do
   name <- lIdentifier
   return $ Operator sign $ Op prec ass name
 
+
+allVars t = case t of
+  TUserVar x      -> S.singleton x
+  TLambda t1 t2   -> S.union (allVars t1) (allVars t2)
+  TAlgebraic _ ts -> S.unions (map allVars ts)
+  _               -> S.empty
+
 newAlgType = do
   rword "data"
   name <- uIdentifier
   params <- many lIdentifier
   rop "="
   constructors <- sepBy1 singleConstructor (rop "|")
+  unless
+    (null $
+      (S.unions $ map allVars $ concatMap snd constructors) S.\\
+      (S.fromList params)
+    )
+    (fail "undefined type variables in constructor definition!")
   return $ let
     retTypeConstructor = TAlgebraic name $ map TVar params
     primConstructors = map

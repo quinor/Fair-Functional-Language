@@ -1,0 +1,32 @@
+
+data Lt a = E | C a (Tree a) (Lt a)
+
+
+def foldrLt
+  = \fun st li -> rec
+    foldr_impl = \match
+        C hd _ tl -> fun hd $ foldr_impl tl
+      | E         -> st
+    in foldr_impl li
+
+def mapLt
+  = \fun li -> rec
+    map_impl = \match
+        C hd e tl  -> C (fun hd) Leaf (map_impl tl)
+      | E          -> E
+    in map_impl li
+
+
+
+
+data Tree a = Leaf | Node (Lt (Tree a)) a
+
+def sum_tree = \match
+    Node l e  -> foldrLt (\a b -> a+b) e (mapLt sum_tree l)
+  | Leaf      -> 0
+
+
+def main = rec
+      e = C (Node E 3) Leaf $ C Leaf Leaf E
+  and lt = C Leaf Leaf $ C Leaf Leaf e
+  in sum_tree $ Node lt 5
